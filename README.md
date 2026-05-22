@@ -1,67 +1,75 @@
 # yanzhi-user-manual-generator
 
-A Claude Code plugin that generates friendly user manuals from source codes or spec documents.
+一个 Claude Code 插件，用于从项目源码或需求文档生成美观的用户手册。
 
-## Installation
+## 安装
 
-In Claude Code, run:
+### 第一步：添加 Marketplace
+
+在 Claude Code 中运行：
 
 ```
-/plugin https://github.com/zhang-songhan/yanzhi-user-manual-generator
+/marketplace https://github.com/zhang-songhan/yanzhi-user-manual-generator
+```
+
+### 第二步：安装插件
+
+```
+/plugin yanzhi-user-manual-generator
 ```
 
 ## Skills
 
 ### writing-user-manual
 
-Generate or update a structured Markdown user manual from project source code or spec documents.
+根据项目源码或需求文档，生成结构化的 Markdown 用户手册。
 
-- Analyzes codebase to extract feature modules and workflows
-- Produces a complete manual with product overview, feature descriptions, step-by-step instructions, and screenshot placeholders (`【图X：...】`)
-- Supports **create** mode (new manual) and **update** mode (refresh existing manual)
+- 自动分析代码库，提取功能模块和业务流程
+- 生成包含产品概览、功能说明、操作步骤和截图占位符（`【图X：...】`）的完整手册
+- 支持**新建**模式和**更新**模式（刷新已有手册）
 
-**Trigger keywords:** `user manual`, `user guide`, `用户手册`, `使用手册`, `用户指南`, `update manual`, `更新手册`
+**触发关键词：** `用户手册`、`使用手册`、`用户指南`、`user manual`、`user guide`、`更新手册`
 
 ### auto-capture
 
-Automatically capture real screenshots for every placeholder in a user manual by interactively navigating the running application.
+自动为用户手册中的截图占位符捕获真实截图，通过交互式导航运行中的应用程序完成。
 
-Uses a **snapshot-analyze-act** loop — reads the current screen, decides what to click, verifies the result — never a blind script.
+采用**快照-分析-操作**循环——读取当前界面、判断点击目标、验证操作结果，而非盲目执行脚本。
 
-Four capture modes:
+四种截图模式：
 
-| Mode | Platform | Method |
-|------|----------|--------|
-| Browser | Web apps | Playwright MCP |
-| Windows native | WPF / WinForms | pywinauto |
-| macOS native | Cocoa / AppKit | osascript (AppleScript) |
-| Guided desktop | Linux / fallback | Step-by-step user guidance |
+| 模式 | 平台 | 技术方案 |
+|------|------|----------|
+| 浏览器模式 | Web 应用 | Playwright MCP |
+| Windows 原生模式 | WPF / WinForms | pywinauto |
+| macOS 原生模式 | Cocoa / AppKit | osascript (AppleScript) |
+| 引导式桌面模式 | Linux / 回退方案 | 逐步引导用户操作 |
 
-**Trigger keywords:** `auto capture`, `take screenshots`, `fill screenshots`, `截图`, `自动截图`
+**触发关键词：** `自动截图`、`截图`、`填充截图`、`auto capture`、`take screenshots`
 
 ### generating-html-manual
 
-Convert a Markdown user manual into a standalone, styled HTML page with sidebar navigation and company branding.
+将 Markdown 用户手册转换为带样式的独立 HTML 页面，包含侧边栏导航和公司品牌标识。
 
-Features:
+功能特性：
 
-- Left sidebar TOC with active heading tracking
-- Responsive layout (desktop, tablet, mobile)
-- Company logo in header and footer
-- Back-to-top button
-- Print-optimized stylesheet
-- Single `index.html` output — ready to distribute
+- 左侧目录导航，自动追踪当前阅读位置
+- 响应式布局（桌面、平板、手机）
+- 页头页脚展示公司 Logo
+- 返回顶部按钮
+- 打印优化样式
+- 输出单个 `index.html` 文件，可直接分发
 
-**Trigger keywords:** `HTML manual`, `convert to HTML`, `生成HTML手册`, `转HTML`, `HTML版本`
+**触发关键词：** `生成HTML手册`、`转HTML`、`HTML版本`、`HTML manual`、`convert to HTML`
 
-## Typical Workflow
+## 典型工作流
 
 ```
-1. /writing-user-manual   →  Generate Markdown manual with screenshot placeholders
-2. /auto-capture          →  Fill placeholders with real screenshots from the running app
-3. /generating-html-manual →  Convert to a polished standalone HTML page
+1. /writing-user-manual    →  生成带截图占位符的 Markdown 用户手册
+2. /auto-capture           →  自动导航应用，用真实截图填充占位符
+3. /generating-html-manual →  转换为精美的独立 HTML 页面
 ```
 
-## License
+## 许可证
 
 MIT
