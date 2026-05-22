@@ -264,7 +264,7 @@ Action types: **新增** (add), **替换** (replace), **删除** (remove), **保
 
 ### Version Header
 
-The manual title must include the version name extracted in Step 1:
+**MANDATORY.** The version name extracted in Step 1 must appear in the manual. The manual is INVALID without a version name.
 
 ```markdown
 # Project Name — 用户使用手册
@@ -276,7 +276,7 @@ The manual title must include the version name extracted in Step 1:
 
 ### Required Sections (in order)
 
-1. **欢迎使用** — Version name, one paragraph: what is this system + 3 bullet points of key benefits
+1. **欢迎使用** — **Must explicitly state the version name** (e.g., "本文档适用于 [Product Name] V2.3.0 版本"), followed by one paragraph: what is this system + 3 bullet points of key benefits
 2. **产品概述** — Brief product introduction + Mermaid operation flowchart (see Product Introduction section below)
 3. **目录** — Markdown anchor links to all major sections
 4. **系统登录** — Login flow, error table, logout
