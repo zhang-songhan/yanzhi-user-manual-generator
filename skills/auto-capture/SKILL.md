@@ -9,10 +9,11 @@ description: Use when the user has a user manual with screenshot placeholders (�
 
 Automatically capture screenshots for every placeholder in a user manual by interactively navigating the running application. Uses a **snapshot-analyze-act** loop — never a blind script — to understand each screen, decide what to click, and verify before capturing.
 
-Supports three capture modes:
+Supports four capture modes:
 - **Browser mode** — web apps via Playwright MCP tools
 - **Windows native mode** — WPF/WinForms apps via `pywinauto` (automatic interaction on Windows)
-- **Guided desktop mode** — any desktop app where native automation is unavailable (macOS, Linux, or when automation fails)
+- **macOS native mode** — Cocoa/AppKit apps via `osascript` / AppleScript (automatic interaction on macOS)
+- **Guided desktop mode** — any desktop app where native automation is unavailable (Linux, or when automation fails)
 
 ## When to Use
 
@@ -39,7 +40,8 @@ Determine the app type from specs/source codes before starting:
 | WPF (`Window`, `UserControl`, XAML, `.csproj` with `PresentationCore`) | Desktop (WPF) | Windows native mode (if on Windows), else Guided desktop |
 | WinForms (`Form`, `.csproj` with `System.Windows.Forms`) | Desktop (WinForms) | Windows native mode (if on Windows), else Guided desktop |
 | Electron (`electron`, `BrowserWindow`) | Desktop (Electron) | Browser mode (may work with URL) |
-| Qt, Swing, Flutter desktop | Desktop (native) | Guided desktop mode |
+| Qt, Swing, Flutter desktop | Desktop (native) | macOS native mode (if macOS), else Guided desktop |
+| Cocoa/AppKit (`NSWindow`, `UIKit`, `.app` bundle, Swift/Objective-C) | Desktop (macOS native) | macOS native mode |
 
 If unclear, ask the user: "请确认应用类型：1) Web应用（浏览器访问） 2) 桌面应用（如WPF/WinForms）"
 
@@ -52,7 +54,8 @@ uname -s    # "Darwin" = macOS, "Linux" = Linux, "MINGW"/"MSYS"/"Windows_NT" = W
 ```
 
 - **Windows** → use Windows native mode (pywinauto)
-- **macOS / Linux** → use Guided desktop mode
+- **macOS** → use macOS native mode (osascript)
+- **Linux** → use Guided desktop mode
 
 ## Core Principle: Snapshot-Analyze-Act
 
@@ -77,6 +80,7 @@ digraph auto_capture {
   "Desktop app: detect OS" [shape=box];
   "OS?" [shape=diamond];
   "Windows native mode: connect via pywinauto" [shape=box];
+  "macOS native mode: connect via osascript" [shape=box];
   "Guided desktop mode: confirm app running" [shape=box];
   "Next placeholder?" [shape=diamond];
   "Read placeholder description" [shape=box];
@@ -97,9 +101,11 @@ digraph auto_capture {
   "App type?" -> "Desktop app: detect OS" [label="desktop"];
   "Desktop app: detect OS" -> "OS?";
   "OS?" -> "Windows native mode: connect via pywinauto" [label="Windows"];
-  "OS?" -> "Guided desktop mode: confirm app running" [label="macOS/Linux"];
+  "OS?" -> "macOS native mode: connect via osascript" [label="macOS"];
+  "OS?" -> "Guided desktop mode: confirm app running" [label="Linux"];
   "Browser mode: navigate to URL" -> "Next placeholder?";
   "Windows native mode: connect via pywinauto" -> "Next placeholder?";
+  "macOS native mode: connect via osascript" -> "Next placeholder?";
   "Guided desktop mode: confirm app running" -> "Next placeholder?";
   "Next placeholder?" -> "Read placeholder description" [label="yes"];
   "Next placeholder?" -> "Replace placeholders in manual" [label="no"];
@@ -194,14 +200,70 @@ win.print_control_identifiers(depth=3)
 
 This outputs the control tree with names, types, and identifiers — equivalent to `browser_snapshot` for web apps.
 
-#### Guided Desktop Mode (macOS/Linux)
+#### Guided Desktop Mode (Linux)
 
-For desktop apps on non-Windows systems, or when native automation is unavailable:
+For desktop apps on Linux, or when native automation is unavailable:
 
 1. Ask the user to confirm the app is running and visible on screen
 2. Guide the user with step-by-step instructions (which buttons/menus to click)
 3. Use system screenshot commands for capture
 4. Ask the user: "应用是否已打开？我将引导您逐步导航并截取屏幕截图。"
+
+#### macOS Native Mode (Cocoa/AppKit Apps)
+
+Connect to the running application using `osascript` (AppleScript) via `Bash` commands.
+
+**Prerequisite** — grant Accessibility permissions:
+
+> **System Settings → Privacy & Security → Accessibility** — add Terminal (or the app running Claude Code) to the allowed list. Without this, `osascript` cannot inspect or control other apps.
+
+Verify accessibility access:
+
+```bash
+osascript -e 'tell application "System Events" to get name of every process whose background only is false'
+```
+
+If this returns an error about assistive access, remind the user to grant permissions.
+
+**List running apps** — find the target application:
+
+```bash
+osascript -e 'tell application "System Events" to get name of every process whose background only is false'
+```
+
+**Bring app to front:**
+
+```bash
+osascript -e 'tell application "AppName" to activate'
+```
+
+**Snapshot UI element tree** — print the current window structure:
+
+```bash
+osascript -e '
+tell application "System Events"
+    tell process "AppName"
+        set uiElements to entire contents of window 1
+        repeat with elem in uiElements
+            set elemClass to class of elem as text
+            set elemName to ""
+            try
+                set elemName to name of elem
+            end try
+            set elemDesc to ""
+            try
+                set elemDesc to description of elem
+            end try
+            log elemClass & " | " & elemName & " | " & elemDesc
+        end repeat
+    end tell
+end tell
+' 2>&1
+```
+
+This outputs element types, names, and descriptions — equivalent to `browser_snapshot` for web apps or `print_control_identifiers` for pywinauto.
+
+**Note:** The first snapshot may take a few seconds. For faster iteration, use a focused depth by targeting specific containers (e.g., `group 1 of window 1`) instead of `entire contents of window 1`.
 
 ### Step 3: Capture Loop
 
@@ -322,7 +384,7 @@ win.type_keys('{ENTER}')
 
 ##### Guided Desktop Mode
 
-For desktop apps without native automation:
+For desktop apps without native automation (Linux):
 
 1. From the specs/source codes, determine the navigation path to the target screen
 2. Tell the user exactly what to click:
@@ -344,6 +406,149 @@ For desktop apps without native automation:
 >
 > 完成后回复"ok"。
 
+##### macOS Native Mode
+
+Using the **snapshot-analyze-act** loop via `Bash`:
+
+1. **Snapshot** — print the UI element tree to understand current state (see Step 2 "Snapshot UI element tree")
+2. **Analyze** — read the element tree output, identify what's visible (buttons, menus, text fields, tabs, outlines)
+3. **Act** — perform ONE action using `Bash`:
+
+**Click a menu item:**
+
+```bash
+osascript -e '
+tell application "System Events"
+    tell process "AppName"
+        click menu item "课程管理" of menu "功能" of menu bar 1
+    end tell
+end tell
+'
+```
+
+**Click a button:**
+
+```bash
+osascript -e '
+tell application "System Events"
+    tell process "AppName"
+        click button "确定" of window 1
+    end tell
+end tell
+'
+```
+
+**Type into a text field:**
+
+```bash
+osascript -e '
+tell application "System Events"
+    tell process "AppName"
+        set focused of text field 1 of window 1 to true
+        keystroke "input text here"
+    end tell
+end tell
+'
+```
+
+**Clear and type into a field:**
+
+```bash
+osascript -e '
+tell application "System Events"
+    tell process "AppName"
+        set focused of text field 1 of window 1 to true
+        keystroke "a" using command down
+        keystroke "replacement text"
+    end tell
+end tell
+'
+```
+
+**Send keyboard shortcuts:**
+
+```bash
+osascript -e '
+tell application "System Events"
+    tell process "AppName"
+        keystroke "s" using command down  -- Cmd+S
+        keystroke "n" using {command down, shift down}  -- Cmd+Shift+N
+        key code 36  -- Enter
+        key code 48  -- Tab
+        key code 51  -- Delete
+        key code 53  -- Escape
+    end tell
+end tell
+'
+```
+
+**Select a tab:**
+
+```bash
+osascript -e '
+tell application "System Events"
+    tell process "AppName"
+        click radio button "设置" of radio group 1 of tab group 1 of window 1
+    end tell
+end tell
+'
+```
+
+**Select a row in a table/outline:**
+
+```bash
+osascript -e '
+tell application "System Events"
+    tell process "AppName"
+        select row 2 of table 1 of scroll area 1 of window 1
+    end tell
+end tell
+'
+```
+
+**Get properties of a specific element** (for precise analysis):
+
+```bash
+osascript -e '
+tell application "System Events"
+    tell process "AppName"
+        set props to properties of window 1
+        set elemList to every UI element of window 1
+        repeat with elem in elemList
+            try
+                log (class of elem as text) & ": " & (name of elem)
+            end try
+        end repeat
+    end tell
+end tell
+' 2>&1
+```
+
+4. **Verify** — snapshot the UI element tree again to confirm the action succeeded
+5. **Repeat** until the target screen state is reached
+
+**Key rules:**
+- Each `Bash` call runs `osascript` independently — do NOT rely on AppleScript variables between calls
+- Always re-target the process (`tell process "AppName"`) in every call
+- AppleScript element hierarchy: `menu bar 1 → menu "File" → menu item "Save"`, `window 1 → group 1 → button "OK"`
+- Use index-based access when element names are dynamic: `text field 1`, `button 2 of group 1`
+- Use `try/end try` to handle elements that may not exist on the current screen
+- If `entire contents` is too slow, target specific containers: `entire contents of group 1 of window 1`
+
+**macOS key codes (common):**
+
+| Key | Code | Key | Code |
+|-----|------|-----|------|
+| Enter | 36 | Tab | 48 |
+| Delete | 51 | Escape | 53 |
+| Space | 49 | Up | 126 |
+| Down | 125 | Left | 123 |
+| Right | 124 | Home | 115 |
+| End | 119 | Page Up | 116 |
+| Page Down | 121 | F1 | 122 |
+
+**macOS modifier keys:** `command down`, `shift down`, `option down`, `control down`
+
 #### 3c. Handle Blocks
 
 If you cannot find a widget, the page looks unexpected, or you're stuck:
@@ -360,6 +565,12 @@ If you cannot find a widget, the page looks unexpected, or you're stuck:
 **Windows native mode fallback:** If `pywinauto` cannot find a control or the action fails:
 - Print the current control tree and analyze what's available
 - If the control tree shows unexpected structure, adjust the selector
+- After 3 failed attempts, fall back to guided mode for this placeholder
+- Ask user: "自动操作遇到困难。请手动导航到目标页面后通知我，或提供操作指引。"
+
+**macOS native mode fallback:** If `osascript` cannot find an element or the action fails:
+- Print the current UI element tree and analyze what's available
+- If the element hierarchy is unexpected, adjust the selector (try index-based access)
 - After 3 failed attempts, fall back to guided mode for this placeholder
 - Ask user: "自动操作遇到困难。请手动导航到目标页面后通知我，或提供操作指引。"
 
@@ -386,12 +597,35 @@ print('Screenshot saved.')
 "
 ```
 
-**Guided desktop mode:**
-1. Ask the user to take a screenshot, or use a system screenshot command:
-   - macOS: `screencapture -w screenshots/图1-登录页面.png` (captures clicked window)
-   - macOS: `screencapture screenshots/图1-登录页面.png` (captures full screen)
-   - Or ask user to provide the screenshot file path
-2. If the user provides a screenshot file, copy it to `screenshots/` with a descriptive name
+**macOS native mode:**
+1. Use `Bash` to capture the window via `screencapture`:
+
+```bash
+mkdir -p screenshots && screencapture -w screenshots/图1-登录页面.png
+```
+
+Or capture a specific window by getting its bounds first:
+
+```bash
+osascript -e '
+tell application "System Events"
+    tell process "AppName"
+        set pos to position of window 1
+        set sz to size of window 1
+        set x to item 1 of pos
+        set y to item 2 of pos
+        set w to item 1 of sz
+        set h to item 2 of sz
+        do shell script "screencapture -R " & x & "," & y & "," & w & "," & h & " screenshots/图1-登录页面.png"
+    end tell
+end tell
+'
+```
+
+**Guided desktop mode (Linux):**
+1. Ask the user to take a screenshot, or use a system screenshot command
+2. Or ask user to provide the screenshot file path
+3. If the user provides a screenshot file, copy it to `screenshots/` with a descriptive name
 
 **All modes:**
 3. Save to a file named descriptively: `screenshots/图1-登录页面.png`, `screenshots/图2-首页概览.png`
@@ -455,7 +689,25 @@ Status types: **成功** (captured), **跳过** (skipped), **需手动** (needs 
 
 **pywinauto key modifiers:** `%` = Alt, `^` = Ctrl, `+` = Shift. Special keys: `{ENTER}`, `{TAB}`, `{ESC}`, `{BACK}`, `{DELETE}`, `{UP}`, `{DOWN}`, `{LEFT}`, `{RIGHT}`.
 
-### Guided Desktop Mode (macOS/Linux)
+### macOS Native Mode (Cocoa/AppKit Apps on macOS)
+
+| Action | Bash Command | Notes |
+|--------|-------------|-------|
+| List running apps | `osascript -e 'tell app "System Events" to get name of every process...'` | Find target app name |
+| Snapshot UI tree | `entire contents of window 1 of process "X"` via osascript | Equivalent to `browser_snapshot` |
+| Get specific elements | `every UI element of window 1` + log class & name | Focused inspection |
+| Bring app to front | `tell application "X" to activate` | Before interacting |
+| Click menu item | `click menu item "X" of menu "Y" of menu bar 1` | Menu bar actions |
+| Click button | `click button "X" of window 1` | Dialogs, toolbars |
+| Type into field | `set focused of text field N to true` then `keystroke "text"` | Index-based targeting |
+| Send keys | `keystroke "s" using command down` | `command`, `shift`, `option`, `control` |
+| Press key by code | `key code 36` (Enter) | See key code table above |
+| Select tab | `click radio button "X" of radio group 1 of tab group 1` | Tab controls |
+| Select table row | `select row N of table 1 of scroll area 1` | Table/list views |
+| Take screenshot | `screencapture -R x,y,w,h path.png` or `screencapture -w path.png` | Window or region capture |
+| Verify state | Re-run UI tree snapshot | After each action |
+
+### Guided Desktop Mode (Linux)
 
 | Action | Method | Notes |
 |--------|--------|-------|
@@ -485,6 +737,17 @@ If the app requires authentication, handle login first before starting the captu
 - **Tab order** is defined by `KeyboardNavigation.TabNavigation` — useful for form-filling guidance
 - **Dialog results** — know which buttons close dialogs vs open new windows
 
+### macOS Native Mode Tips
+
+- **Accessibility permissions are required** — `osascript` cannot control other apps without System Settings → Privacy & Security → Accessibility access
+- **Element hierarchy in AppleScript**: `window 1 → group 1 → button "OK"`, `menu bar 1 → menu "File" → menu item "Save"`
+- **Use `try/end try`** — many elements don't support all properties (e.g., `name` may not exist). Wrap in try blocks to avoid script errors
+- **Index-based vs name-based** — prefer name-based selectors (`button "确定"`), fall back to index (`button 1 of group 2`) when names are empty or dynamic
+- **`entire contents` can be slow** — for complex windows, target specific containers (`entire contents of group 1 of window 1`) instead of the whole window
+- **Sheet windows** — macOS sheets (e.g., Save dialogs) are children of the parent window: `sheet 1 of window 1`
+- **`log` outputs to stderr** — use `2>&1` in Bash to capture `log` output
+- **Window numbering** — windows are indexed front-to-back; `window 1` is the frontmost
+
 ### Windows Native Mode Tips
 
 - **Always use `backend='uia'`** — the UIA backend supports WPF and modern WinForms controls
@@ -510,3 +773,7 @@ If the app requires authentication, handle login first before starting the captu
 | Using `backend='win32'` for WPF | Always use `backend='uia'` for WPF/WinForms |
 | Wrong `control_type` in pywinauto selector | Print control tree first to see exact types |
 | Not handling dialog popups in Windows mode | After action, re-snapshot to detect new dialogs |
+| Missing macOS Accessibility permissions | Remind user to grant access in System Settings → Privacy & Security → Accessibility |
+| Slow `entire contents` on macOS | Target specific containers instead of full window |
+| Not using `try/end try` in AppleScript | Many elements lack expected properties; wrap in try blocks |
+| Assuming macOS element names exist | Fall back to index-based access when names are empty |
