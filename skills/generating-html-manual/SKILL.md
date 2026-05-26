@@ -56,7 +56,8 @@ digraph html_manual {
 1. Read the input markdown file
 2. Parse all headings (`##` and `###`) to build the sidebar TOC
 3. Scan for media references: `![alt](path)`, `<img src="path">`, `[text](path.pdf)` etc.
-4. Record the relative paths of all referenced media files
+4. Scan for mermaid/fenced diagram blocks: ```` ```mermaid ```` code blocks
+5. Record the relative paths of all referenced media files
 
 ### Step 2: Create Output Folder
 
@@ -83,6 +84,7 @@ Convert the markdown content to well-structured HTML following these rules:
 | `- item` | `<ul><li>item</li></ul>` |
 | `` `code` `` | `<code>code</code>` |
 | Code blocks | `<pre><code>...</code></pre>` |
+| ````mermaid` blocks | `<pre class="mermaid">` — render as live diagrams, NOT raw code |
 
 **Skip inline TOC sections:** If the markdown contains a "目录"、"Table of Contents"、"内容提要" or similar TOC section (a heading followed by a list of internal links), **omit it from the HTML body**. The sidebar already provides navigation — duplicating the TOC in the content area wastes space and confuses readers.
 
@@ -98,7 +100,7 @@ Convert the markdown content to well-structured HTML following these rules:
 
 ### Step 4: Apply HTML Template
 
-Generate a complete standalone HTML page with the following structure and design specs. All styles and scripts must be inline — single `index.html` output.
+Generate a complete standalone HTML page with the following structure and design specs. All styles and scripts must be inline — single `index.html` output, with the exception of the Mermaid.js CDN script (see Mermaid & Flowchart Handling section).
 
 #### Page Structure
 
@@ -177,6 +179,48 @@ Convert markdown blockquotes with specific markers to styled callouts:
 | `> **危险**：` or `> **Danger**:` | `.callout-danger` |
 | Regular blockquote (no marker) | Default blockquote (blue-gray) |
 
+## Mermaid & Flowchart Handling
+
+**CRITICAL: Never output raw Mermaid code in the HTML.** All mermaid/fenced diagram code blocks must be rendered as live interactive diagrams.
+
+### Detection
+
+Scan the markdown for fenced code blocks with the `mermaid` language tag:
+
+````markdown
+```mermaid
+graph TD
+  A[Start] --> B[End]
+```
+````
+
+### Conversion
+
+1. Convert each ```` ```mermaid ```` block to `<pre class="mermaid">` containing **only the Mermaid DSL** (no markdown fences)
+2. Do NOT wrap in `<code>` — the Mermaid library targets `<pre class="mermaid">` directly
+3. Include the Mermaid.js library via CDN in the HTML `<head>`:
+   ```html
+   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+   ```
+4. Initialize Mermaid at the end of the `<body>`, after all content:
+   ```html
+   <script>
+   mermaid.initialize({ startOnLoad: true, theme: 'default' });
+   </script>
+   ```
+
+### Styling
+
+- Set `max-width: 100%` on `.mermaid` SVG output to prevent overflow on mobile
+- Add a subtle border and background to the `<pre class="mermaid">` container so it's visually distinct
+- Mermaid text color defaults should remain readable against the page background
+
+### Example
+
+| Markdown Input | HTML Output |
+|---------------|-------------|
+| ```` ```mermaid\ngraph LR\n  A --> B\n```` ``` | `<pre class="mermaid">graph LR\n  A --> B\n</pre>` |
+
 ## Media Handling
 
 **Image references:**
@@ -236,3 +280,4 @@ Convert markdown blockquotes with specific markers to styled callouts:
 | Dark text on dark background | Use white/light text on any dark-colored element |
 | TOC section duplicated in body | Sidebar already shows TOC — omit "目录" sections from content |
 | Screenshot index table included in HTML | Omit "截图索引" section entirely — it's a build-time reference, not end-user content |
+| Outputting raw Mermaid code in HTML | Convert ```` ```mermaid ```` blocks to `<pre class="mermaid">` with CDN + initialization |
