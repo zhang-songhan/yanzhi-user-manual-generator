@@ -15,7 +15,7 @@
 ### 第二步：安装插件
 
 ```
-/plugin yanzhi-user-manual-generator
+/plugin install yanzhi-user-manual-generator
 ```
 
 ## Skills
