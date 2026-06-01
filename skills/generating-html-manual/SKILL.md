@@ -116,7 +116,7 @@ Generate a complete standalone HTML page with the following structure and design
 #### Page Structure
 
 - **Header** — fixed top bar with company logo, page title, version string, and mobile sidebar toggle
-- **Sidebar** — fixed left navigation with TOC, collapsible on mobile
+- **Sidebar** — fixed left navigation with TOC. Collapsible on all screen sizes via toggle button (desktop: shrink to 0 with slide animation; mobile: overlay mode). Collapse state persisted in `localStorage`.
 - **Content** — main body area with max-width 900px, centered
 - **Footer** — company logo and copyright
 - **Back-to-top button** — fixed bottom-right, appears on scroll
@@ -134,12 +134,15 @@ Generate a complete standalone HTML page with the following structure and design
 
 | Element | Spec |
 |---------|------|
-| Header height | 64px, fixed top |
-| Sidebar width | 280px, fixed left |
-| Content max-width | 900px, centered |
-| Anchor scroll offset | `scroll-margin-top: 80px` on all `h2` and `h3` to prevent fixed header from covering targets |
+| Header height | 64px, fixed top, `z-index: 1000` |
+| Sidebar width | 280px, fixed left, `z-index: 900` |
+| Sidebar collapsed | Width 0 (hidden), content area expands to full width. Transition: `width 0.3s ease` |
+| Sidebar toggle button | Always visible button (☰/✕ icon) in header or sidebar edge. On desktop: slides sidebar in/out. On mobile: overlay mode. |
+| Sidebar state persistence | Save collapsed/expanded state to `localStorage` key `sidebar-collapsed`. Restore on page load. |
+| Content max-width | 900px, centered. When sidebar collapsed: `margin-left: 0`, content centers in full viewport |
+| Anchor scroll offset | CSS: `scroll-margin-top: 80px` on all `h2`/`h3`. JS: intercept TOC link clicks, call `scrollIntoView()` with manual offset for the 64px header + 16px breathing room |
 | Back-to-top trigger | Scroll > 400px |
-| Mobile breakpoint | ≤1024px: sidebar hidden, toggle shown |
+| Mobile breakpoint | ≤1024px: sidebar overlay mode (fixed position, full-height, shadow backdrop), toggle in header |
 | Print | Hide header, sidebar, back-to-top; full-width content |
 
 #### Contrast & Readability Rules
@@ -158,9 +161,36 @@ Generate a complete standalone HTML page with the following structure and design
 
 #### Responsive Behavior
 
-- **Desktop (>1024px):** Sidebar visible, content offset by sidebar width
-- **Tablet/Mobile (≤1024px):** Sidebar hidden by default, toggle button in header, overlay when open
-- **Small mobile (≤640px):** Reduced heading font sizes
+- **Desktop (>1024px):** Sidebar visible by default (280px), content offset. Sidebar collapsible via toggle button — when collapsed, sidebar slides to 0 width, content expands to full viewport width centered.
+- **Tablet/Mobile (≤1024px):** Sidebar hidden by default, hamburger toggle in header, overlay mode when open (full-height, shadow backdrop, closes on backdrop click or nav link click).
+- **Small mobile (≤640px):** Reduced heading font sizes. Overlay sidebar takes full width.
+
+#### Sidebar Collapse Behavior
+
+The sidebar must support collapsing on ALL screen sizes, not just mobile:
+
+1. **Toggle button:** A button (☰ hamburger icon) is always visible — on desktop it's at the sidebar edge or in the header; on mobile it's in the header.
+2. **Desktop collapse:** Clicking toggle slides the sidebar out of view (width 0). The main content area's `margin-left` transitions from 280px to 0. The content re-centers in the full viewport.
+3. **State persistence:** Use `localStorage` to remember collapsed state across page loads. Key: `sidebar-collapsed`, value: `"true"` or `"false"`.
+4. **CSS transition:** `transition: width 0.3s ease` on sidebar, matching `transition: margin-left 0.3s ease` on content area.
+5. **Collapsed indicator:** When sidebar is collapsed, show a subtle vertical tab/button at the left edge of the screen to expand it back (or use the header toggle button).
+6. **Mobile:** Same toggle button switches to overlay mode (sidebar overlays content with dark backdrop) instead of push mode.
+
+#### Anchor Scroll Behavior
+
+TOC link clicks must scroll to the target heading with proper offset to prevent the fixed header from obscuring content:
+
+1. **CSS fallback:** Add `scroll-margin-top: 80px` on all `h2` and `h3` elements. This handles browser-native anchor navigation (`#fragment` in URL).
+2. **JavaScript interception:** Attach click handlers to all sidebar TOC links (`<a>` inside `.toc-list`). Prevent default, then:
+   - Find the target element by `id` (extracted from `href` attribute)
+   - Calculate scroll position: `target.getBoundingClientRect().top + window.pageYOffset - headerHeight - 16`
+   - Use `window.scrollTo({ top: position, behavior: 'smooth' })`
+   - The offset must account for: 64px header + 16px breathing room = 80px total
+3. **Edge cases:**
+   - Target element doesn't exist → silently ignore (don't throw)
+   - Already at target → no scroll needed
+   - Mobile overlay mode → close sidebar overlay after click
+4. **Back-to-top button:** Use the same smooth scroll approach: `window.scrollTo({ top: 0, behavior: 'smooth' })`
 
 ### Step 5: Verify
 
@@ -300,3 +330,7 @@ graph TD
 | Lazy images shift anchor scroll position | Give screenshot `<img>` explicit `width`/`height` attrs + CSS `height: 450px; object-fit: contain` |
 | Mermaid diagram different height than screenshots | Give `<pre class="mermaid">` `height: 450px` to match screenshot height |
 | Mermaid diagram top clipped with flex | Use `display: block` (NOT `display: flex`) on `<pre class="mermaid">` to avoid overflow clipping |
+| Sidebar not collapsible on desktop | Add toggle button with CSS width transition + JS toggle + localStorage persistence |
+| Sidebar collapse state lost on reload | Save state to `localStorage.getItem/setItem('sidebar-collapsed')`, restore on DOMContentLoaded |
+| Fixed header covers anchor target on TOC click | Intercept TOC link clicks with JS, use `window.scrollTo()` with manual offset (header 64px + 16px padding) |
+| Anchor offset only uses CSS scroll-margin-top | CSS-only approach doesn't handle dynamic header height changes — add JS interception as primary method, CSS as fallback |
