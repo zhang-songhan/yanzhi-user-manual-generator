@@ -45,11 +45,28 @@
 
 **触发关键词：** `生成HTML手册`、`转HTML`、`HTML版本`、`HTML manual`、`convert to HTML`
 
+### auto-capture-for-webapp
+
+自动启动 web 应用，使用 Playwright 浏览器自动化截图，填充用户手册中的截图占位符。
+
+功能特性：
+
+- 解析用户手册中的 `【图X：...】` 截图占位符，构建截图任务列表
+- 自动分析项目源码，识别 dev server 启动方式、路由和认证凭据
+- 使用 Playwright MCP 导航页面、填写表单、触发交互状态后截图
+- 将截图保存到手册的 `screenshots/` 目录，文件名与占位符精确匹配
+- 支持错误恢复、复杂认证流程处理、截图结果汇总报告
+
+**前置条件：** 项目 GUI 必须为纯 web 前端（React、Vue、Next.js 等）。手册需由 `writing-user-manual` 生成，包含截图占位符。
+
+**触发关键词：** `auto capture screenshots`、`fill screenshot placeholders`、`自动截图`、`补充截图`、`批量截图`
+
 ## 典型工作流
 
 ```
-1. /writing-user-manual    →  生成带截图占位符的 Markdown 用户手册
-2. /generating-html-manual →  转换为精美的独立 HTML 页面
+1. /writing-user-manual       →  生成带截图占位符的 Markdown 用户手册
+2. /auto-capture-for-webapp   →  自动启动应用并捕获真实截图
+3. /generating-html-manual    →  转换为精美的独立 HTML 页面（含截图）
 ```
 
 ## 许可证
