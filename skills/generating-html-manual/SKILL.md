@@ -24,6 +24,10 @@ Convert a Markdown user manual into a self-contained, styled HTML page with side
 - Read `color-spec.md` in this skill's directory for the complete color system and design tokens.
 - Read `company_style/` in this skill's directory for logo assets.
 
+**DEVELOPMENT METHODOLOGY:**
+- This skill generates a standalone single HTML webpage with embedded styles and scripts. When implementing the HTML output (Steps 3-4), use the `superpowers:test-driven-development` Skill to guide test-first development of the HTML page — verifying structure, styles, and interactive behaviors (sidebar toggle, anchor scroll offset, back-to-top, responsive breakpoints, etc.) before finalizing the output.
+- If the `superpowers:test-driven-development` Skill is not available in the current environment, skip the TDD requirement and generate the HTML directly.
+
 ## Workflow
 
 ```dot
