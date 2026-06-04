@@ -293,6 +293,7 @@ digraph update_flow {
   "Update manual content" [shape=box];
   "Write to NEW file with new anchor" [shape=box];
   "Copy legacy screenshots to new manual" [shape=box];
+  "Screenshot completeness audit (GUI)" [shape=box];
   "Invoke take-screenshots for changed only" [shape=box];
   "Output screenshot modification table" [shape=box];
   "Done" [shape=doublecircle];
@@ -312,15 +313,18 @@ digraph update_flow {
   "git diff between commits" -> "Summarize project changes";
   "Summarize project changes" -> "Legacy has screenshots?";
   "Legacy has screenshots?" -> "Map changes to screenshot actions" [label="yes"];
-  "Legacy has screenshots?" -> "Update manual content" [label="no"];
+  "Legacy has screenshots?" -> "New features with UI?" [label="no"];
+  "New features with UI?" -> "Is web frontend?" [label="yes"];
+  "New features with UI?" -> "Update manual content" [label="no (backend-only changes)"];
   "Map changes to screenshot actions" -> "Has new/replaced screenshots?";
   "Has new/replaced screenshots?" -> "Is web frontend?" [label="yes"];
-  "Has new/replaced screenshots?" -> "Update manual content" [label="no"];
+  "Has new/replaced screenshots?" -> "Screenshot completeness audit (GUI)" [label="no"];
   "Is web frontend?" -> "Ask: auto-capture changed screenshots?" [label="yes"];
-  "Is web frontend?" -> "Update manual content" [label="no"];
+  "Is web frontend?" -> "Screenshot completeness audit (GUI)" [label="no (other GUI)"];
   "Ask: auto-capture changed screenshots?" -> "User agrees to auto-capture?";
-  "User agrees to auto-capture?" -> "Update manual content" [label="yes"];
-  "User agrees to auto-capture?" -> "Update manual content" [label="no"];
+  "User agrees to auto-capture?" -> "Screenshot completeness audit (GUI)" [label="yes"];
+  "User agrees to auto-capture?" -> "Screenshot completeness audit (GUI)" [label="no"];
+  "Screenshot completeness audit (GUI)" -> "Update manual content";
   "Update manual content" -> "Write to NEW file with new anchor";
   "Write to NEW file with new anchor" -> "Copy legacy screenshots to new manual";
   "Copy legacy screenshots to new manual" -> "Invoke take-screenshots for changed only" [label="auto-capture agreed"];
@@ -330,9 +334,23 @@ digraph update_flow {
 }
 ```
 
-### Step 1: Read Anchor Block from Legacy Manual
+### Step 1: Read and Understand the Legacy Manual
 
-Parse the legacy manual to find the `anchor` code block at the beginning of the file:
+**CRITICAL: Read the ENTIRE legacy manual thoroughly before proceeding.** Do NOT just skim for the anchor block. You must understand:
+
+- The full document structure (all sections, subsections, and their hierarchy)
+- Every feature section and its content (operation flows, steps, tips, warnings)
+- All screenshots: their count, locations, descriptions, and which features they belong to
+- The writing style, tone, and terminology used throughout
+- Any special sections (FAQs, quick start guides, appendices)
+
+This full understanding is the foundation for accurate incremental updates. Without it, you risk:
+- Duplicating content that already exists
+- Missing sections that should be updated
+- Creating inconsistent tone or terminology
+- Mishandling the screenshot inventory
+
+**After reading the full manual**, parse the `anchor` code block at the beginning of the file:
 
 ```
 ​```anchor
@@ -421,7 +439,7 @@ Wait for user confirmation before updating the manual content.
 
 ### Step 4: Handle Screenshots in Legacy Manual
 
-When the legacy manual contains screenshots (`【图X：...】` placeholders or embedded images):
+**If the legacy manual contains screenshots** (`【图X：...】` placeholders or embedded images):
 
 1. **Inventory** all existing screenshots from the legacy manual
 2. **Map** each screenshot to its associated feature/section
@@ -434,6 +452,62 @@ Update screenshot placeholders in the new manual:
 - Update descriptions for replaced screenshots to reflect new UI states
 - Remove placeholders for deleted features
 - Add new placeholders for new features
+
+**If the legacy manual has NO screenshots:**
+
+Check the change list from Step 3. If any changes involve new features with UI or UI modifications (categories marked "Add new screenshot placeholders" or "Replace existing screenshots"), the new manual should include screenshots. Fall back to Mode 1's screenshot determination logic:
+
+1. **Check if the project has a visual interface.** If backend-only/library/API → skip screenshots entirely, proceed to Step 6.
+
+2. **If the project qualifies as web frontend** (browser-based UI, source code available, not CLI/desktop/mobile):
+
+   Ask the user using AskUserQuestion:
+
+   > 旧版用户手册中没有截图，但本次更新涉及 [N] 个新增/修改的 UI 功能。您的项目是 Web 前端应用，我可以使用 `auto-capture-for-webapp:take-screenshots` 为这些功能自动截取页面截图。请问是否需要添加截图？
+   
+   - If user agrees → Add screenshot placeholders for new/modified features, then proceed to Step 5 and Step 7 (auto-capture after writing).
+   - If user declines → Generate manual without screenshots. Skip to Step 6.
+
+3. **If the project has a visual interface but is NOT a web frontend** (CLI, TUI, desktop app, mobile app):
+
+   Ask the user using AskUserQuestion:
+
+   > 旧版用户手册中没有截图，但本次更新涉及 [N] 个新增/修改的 UI 功能。我可以在手册中插入截图占位符来标记需要截图的位置。截图需要您手动创建（非 Web 前端项目无法使用自动化截图工具）。请问是否需要添加截图占位符？
+   
+   - If user agrees → Add screenshot placeholders for new/modified features. Proceed to Step 6 (no auto-capture).
+   - If user declines → Generate manual without screenshots. Skip to Step 6.
+
+### Step 4.5: Screenshot Completeness Audit (GUI Projects Only)
+
+**If the project is a GUI type** (web frontend, desktop app, mobile app — anything with a visual user interface), perform a completeness audit after handling incremental screenshot changes. This ensures the manual has adequate screenshot coverage for ALL features, not just the ones that changed.
+
+**Why this matters:** The old manual may have been generated without screenshots, or may be missing screenshots for some features even before this update. Incremental change analysis only catches what changed between commits — it won't flag a feature that has been undocumented (no screenshots) since the original manual was written.
+
+**Audit process:**
+
+1. **List all feature sections** in the updated manual (from Step 6's content plan). Each major feature section should have at least one screenshot.
+
+2. **Compare against the screenshot inventory** (from Step 4 or the "legacy has no screenshots" branch). Identify features that lack screenshots:
+   - A feature with a multi-step UI flow should have screenshots for key steps
+   - Login page, home/dashboard, and core feature main views ALWAYS need screenshots
+
+3. **For each gap found**, determine if it's a genuine missing screenshot. Skip backend-only features, configuration sections, or FAQ sections that don't have visual interfaces.
+
+4. **Report gaps to the user** before updating content:
+
+   > 截图完整性检查发现以下功能缺少截图（这些功能在旧手册中也没有截图）：
+   >
+   > - [Feature A]：[应该截取什么界面]
+   > - [Feature B]：[应该截取什么界面]
+   >
+   > 请问是否需要为这些功能补充截图？
+
+   - If user agrees → Add placeholders for missing screenshots. If web frontend, also offer auto-capture.
+   - If user declines → Proceed without adding. Note the gaps in the terminal output so the user is aware.
+
+5. **Renumber all screenshots** after adding any missing ones to maintain sequential numbering from 图1 upward.
+
+**If the project is NOT a GUI type** (backend-only, library, API, CLI with no visual output): Skip this step entirely.
 
 ### Step 5: Determine Auto-Capture Eligibility (Update Mode)
 
@@ -779,6 +853,9 @@ This ensures the user knows exactly where to put screenshots and what to name th
 | Not checking auto-capture eligibility when updating manual | In update mode, if there are 新增/替换 screenshots and the project is a web frontend, offer auto-capture (Step 5) before writing the manual |
 | Not invoking auto-capture for changed screenshots in update mode | When auto-capture is agreed in update mode, invoke `Skill` tool with `auto-capture-for-webapp:take-screenshots` for ONLY the 新增/替换 screenshots (not all screenshots) |
 | Auto-capturing all screenshots in update mode (including kept ones) | Only capture 新增 and 替换 screenshots. 保留 screenshots are copied from legacy `screenshots/` directory. Capturing all wastes time and the kept pages may not have changed |
+| Mode 2: skipping screenshots when legacy has none | Even if old manual has no screenshots, if new features have UI, fall back to Mode 1's screenshot logic — ask user about auto-capture or placeholders |
+| Mode 2: not reading the full legacy manual | Read the ENTIRE manual before updating — understand structure, style, screenshots, and all feature sections to avoid duplicates, gaps, and inconsistency |
+| Mode 2: skipping screenshot completeness audit for GUI projects | After handling incremental changes, audit ALL features for screenshot coverage. Features unchanged in this update may still lack screenshots from the original manual |
 
 ---
 
