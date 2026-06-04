@@ -78,9 +78,10 @@ digraph html_manual {
 
 1. Read the input markdown file
 2. Parse all headings (`##` and `###`) to build the sidebar TOC
-3. Scan for media references: `![alt](path)`, `<img src="path">`, `[text](path.pdf)` etc.
-4. Scan for mermaid/fenced diagram blocks: ```` ```mermaid ```` code blocks
-5. Record the relative paths of all referenced media files
+3. **Detect and strip the `anchor` fenced code block** (```` ```anchor ... ``` ````) — this is git metadata, not user-facing content. Record its presence but exclude it from the HTML body.
+4. Scan for media references: `![alt](path)`, `<img src="path">`, `[text](path.pdf)` etc.
+5. Scan for mermaid/fenced diagram blocks: ```` ```mermaid ```` code blocks
+6. Record the relative paths of all referenced media files
 
 ### Step 2: Create Output Folder
 
@@ -108,6 +109,18 @@ Convert the markdown content to well-structured HTML following these rules:
 | `` `code` `` | `<code>code</code>` |
 | Code blocks | `<pre><code>...</code></pre>` |
 | ````mermaid` blocks | `<pre class="mermaid">` — render as live diagrams, NOT raw code |
+
+**Skip anchor code block:** The markdown may contain an `anchor` fenced code block at the very beginning of the file (before the title), recording git branch/commit info:
+
+````markdown
+```anchor
+branch: main
+commit: abc123...
+message: feat: ...
+```
+````
+
+**Strip this block entirely from the HTML output.** It is machine-readable metadata for version tracking, not user-facing content. Parse it in Step 1 to detect its presence, then exclude it from the HTML body in Step 3.
 
 **Skip inline TOC sections:** If the markdown contains a "目录"、"Table of Contents"、"内容提要" or similar TOC section (a heading followed by a list of internal links), **omit it from the HTML body**. The sidebar already provides navigation — duplicating the TOC in the content area wastes space and confuses readers.
 
@@ -368,3 +381,4 @@ graph TD
 | Sidebar toggle has no animation | Use CSS `transition` on `transform` or `margin-left` for smooth fold/unfold animation |
 | Fixed header covers anchor target on TOC click | Intercept TOC link clicks with JS, use `window.scrollTo()` with manual offset (header 64px + 16px padding) |
 | Anchor offset only uses CSS scroll-margin-top | CSS-only approach doesn't handle dynamic header height changes — add JS interception as primary method, CSS as fallback |
+| Anchor code block rendered in HTML output | The `anchor` fenced code block is git metadata — strip it from HTML output entirely, just like TOC and screenshot index sections |

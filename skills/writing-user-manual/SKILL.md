@@ -1,34 +1,118 @@
 ---
 name: writing-user-manual
-description: Use when the user asks to generate or update a user manual, user guide, or documentation for end users from project source code or spec documents. For web frontend projects, can auto-capture real screenshots via auto-capture-for-webapp:take-screenshots to fill placeholder images. Triggers on keywords like "user manual", "user guide", "usage guide", "用户手册", "使用手册", "用户指南", "update manual", "更新手册".
+description: Use when the user asks to generate or update a user manual, user guide, or documentation for end users from project source code. Requires a git-initialized project with clean working tree. For web frontend projects, can auto-capture real screenshots via auto-capture-for-webapp:take-screenshots. Triggers on keywords like "user manual", "user guide", "usage guide", "用户手册", "使用手册", "用户指南", "update manual", "更新手册".
 ---
 
 # Writing User Manuals
 
 ## Overview
 
-Generate or update detailed, non-technical-user-friendly user manuals from project source code or spec documents. **Structure the manual around user operation flows**, not technical modules. Write for people who have never used the system before.
+Generate or update detailed, non-technical-user-friendly user manuals from project source code. **Structure the manual around user operation flows**, not technical modules. Write for people who have never used the system before.
+
+**CRITICAL: The manual MUST be generated from user-provided project source code (a git repository).** The git commit history is the source of truth for version tracking. Each generated manual records its source branch, commit hash, and commit message in an `anchor` code block.
 
 ## When to Use
 
-- User provides source code or spec documents and asks for a new user manual
-- User provides an existing legacy manual AND newer source code/spec documents to update the manual
+- User provides a git project path and asks for a new user manual
+- User provides an existing manual AND a git project path to update the manual
 - User asks for "user guide", "usage manual", "用户手册", "使用指南", "更新手册"
+
+## Prerequisites: Source Code & Git Validation
+
+**MANDATORY. Execute BEFORE mode selection. If any check fails, STOP immediately — do NOT proceed.**
+
+### Check 1: Source Code Provided
+
+The user MUST provide project source code (a directory path). If the user only provides spec documents, screenshots, or descriptions without source code:
+
+> 错误：生成用户手册需要项目源码。您未提供项目源码路径。请提供完整的项目源码目录（一个 git 仓库），然后重试。
+
+STOP. Do not continue.
+
+### Check 2: Git Initialized
+
+Run `git rev-parse --git-dir` in the project directory. If it fails:
+
+> 错误：提供的项目路径未初始化 Git（`git rev-parse --git-dir` 失败）。用户手册必须基于 Git 仓库生成，以便追踪版本信息。请在项目中初始化 Git 并至少创建一个 commit 后重试。
+
+STOP. Do not continue.
+
+### Check 3: Has Commit Records
+
+Run `git rev-parse HEAD` in the project directory. If it fails (no commits):
+
+> 错误：项目没有任何 commit 记录（`git rev-parse HEAD` 失败）。用户手册需要基于已有的 commit 版本生成。请至少创建一个 commit 后重试。
+
+STOP. Do not continue.
+
+### Check 4: Clean Working Tree
+
+Run `git diff HEAD` in the project directory. If there is ANY output (working tree is dirty):
+
+> 错误：当前工作目录存在未提交的更改（`git diff HEAD` 不为空）。用户手册必须基于最新的 commit 版本生成，以确保文档与代码一致。请先提交或暂存所有更改，使工作目录干净后再重试。
+
+STOP. Do not continue.
+
+### Capture Git Info
+
+Only after ALL four checks pass, capture these values (used later for the anchor block):
+
+```bash
+git rev-parse --abbrev-ref HEAD          # → branch name
+git rev-parse HEAD                        # → full commit hash
+git log -1 --format=%B                    # → commit message (may be multi-line)
+```
+
+---
 
 ## Mode Selection
 
 ```dot
 digraph mode_selection {
-  "Receive input" [shape=box];
+  "Pass git validation?" [shape=diamond];
   "Has legacy manual?" [shape=diamond];
-  "Mode: Generate" [shape=box];
-  "Mode: Update" [shape=box];
+  "Mode 1: Generate" [shape=box];
+  "Mode 2: Update" [shape=box];
+  "STOP: validation failed" [shape=box];
 
-  "Receive input" -> "Has legacy manual?";
-  "Has legacy manual?" -> "Mode: Generate" [label="source/spec only"];
-  "Has legacy manual?" -> "Mode: Update" [label="legacy manual + newer source/spec"];
+  "Pass git validation?" -> "Has legacy manual?" [label="yes"];
+  "Pass git validation?" -> "STOP: validation failed" [label="no"];
+  "Has legacy manual?" -> "Mode 1: Generate" [label="no"];
+  "Has legacy manual?" -> "Mode 2: Update" [label="yes"];
 }
 ```
+
+---
+
+## Anchor Block Specification
+
+Every user manual generated or updated by this skill MUST include an anchor block at the very beginning of the file (before the title). This block records the exact git state the manual was generated from.
+
+**Format:**
+
+```
+​```anchor
+branch: <branch-name>
+commit: <full-commit-hash>
+message: <commit-message>
+​```
+```
+
+**Example:**
+
+```
+​```anchor
+branch: main
+commit: abc123def456789012345678901234567890abcd
+message: feat: add user authentication and role management
+​```
+```
+
+**Rules:**
+- The anchor block MUST be the first content in the file (after frontmatter if applicable)
+- For multi-line commit messages, join them with spaces into a single line
+- In Mode 2 (update), the old anchor block is overwritten with the new one
+- If an old manual lacks an anchor block, Mode 2 cannot proceed automatically (see Mode 2 Step 1)
 
 ---
 
@@ -38,79 +122,77 @@ digraph mode_selection {
 
 ```dot
 digraph generate_flow {
-  "Extract version name from source/spec" [shape=box];
+  "Git validation passed" [shape=box];
+  "Capture git info (branch, commit, message)" [shape=box];
+  "Extract version name from source" [shape=box];
   "Version found?" [shape=diamond];
-  "WARN user and STOP" [shape=box];
   "Ask user to confirm version" [shape=box];
   "User confirms?" [shape=diamond];
+  "Use commit short hash as version" [shape=box];
   "Analyze project for operation flows" [shape=box];
   "Has visual interface?" [shape=diamond];
   "Is web frontend?" [shape=diamond];
   "Ask: auto-capture screenshots?" [shape=box];
   "Ask about manual placeholders" [shape=box];
   "User agrees?" [shape=diamond];
-  "Generate manual with placeholders" [shape=box];
-  "Generate manual without placeholders" [shape=box];
+  "Generate manual with placeholders + anchor" [shape=box];
+  "Generate manual without placeholders + anchor" [shape=box];
   "Invoke take-screenshots skill" [shape=box];
   "Output screenshot table + instructions" [shape=box];
   "Done" [shape=doublecircle];
 
-  "Extract version name from source/spec" -> "Version found?";
-  "Version found?" -> "WARN user and STOP" [label="no"];
+  "Git validation passed" -> "Capture git info (branch, commit, message)";
+  "Capture git info (branch, commit, message)" -> "Extract version name from source";
+  "Extract version name from source" -> "Version found?";
   "Version found?" -> "Ask user to confirm version" [label="yes"];
-  "Ask user to confirm version" -> "User confirms?" [label="correct"];
-  "Ask user to confirm version" -> "WARN user and STOP" [label="wrong, ask to provide"];
+  "Version found?" -> "Use commit short hash as version" [label="no"];
+  "Ask user to confirm version" -> "User confirms?";
   "User confirms?" -> "Analyze project for operation flows" [label="yes"];
-  "User confirms?" -> "WARN user and STOP" [label="no (refuse to provide)"];
+  "User confirms?" -> "Use commit short hash as version" [label="no (refuse)"];
+  "Use commit short hash as version" -> "Analyze project for operation flows";
   "Analyze project for operation flows" -> "Has visual interface?";
   "Has visual interface?" -> "Is web frontend?" [label="yes"];
-  "Has visual interface?" -> "Generate manual without placeholders" [label="no"];
+  "Has visual interface?" -> "Generate manual without placeholders + anchor" [label="no"];
   "Is web frontend?" -> "Ask: auto-capture screenshots?" [label="yes"];
   "Is web frontend?" -> "Ask about manual placeholders" [label="no"];
   "Ask: auto-capture screenshots?" -> "User agrees?";
   "Ask about manual placeholders" -> "User agrees?";
-  "User agrees?" -> "Generate manual with placeholders" [label="yes"];
-  "User agrees?" -> "Generate manual without placeholders" [label="no"];
-  "Generate manual with placeholders" -> "Invoke take-screenshots skill" [label="auto-capture agreed"];
-  "Generate manual with placeholders" -> "Output screenshot table + instructions" [label="manual only"];
-  "Generate manual without placeholders" -> "Done";
+  "User agrees?" -> "Generate manual with placeholders + anchor" [label="yes"];
+  "User agrees?" -> "Generate manual without placeholders + anchor" [label="no"];
+  "Generate manual with placeholders + anchor" -> "Invoke take-screenshots skill" [label="auto-capture agreed"];
+  "Generate manual with placeholders + anchor" -> "Output screenshot table + instructions" [label="manual only"];
+  "Generate manual without placeholders + anchor" -> "Done";
   "Invoke take-screenshots skill" -> "Output screenshot table + instructions";
   "Output screenshot table + instructions" -> "Done";
 }
 ```
 
-### Step 1: Extract and Validate Version Name
+### Step 0: Git Validation
 
-**MANDATORY first step.** Search the source code or spec documents for the project version name. Common locations:
+Already completed in Prerequisites. The branch, commit hash, and commit message are captured and ready for the anchor block.
+
+### Step 1: Determine Version Name
+
+Try to find a human-readable version name from the source code. Common locations:
 
 - Config files: `package.json`, `setup.py`, `Cargo.toml`, `pubspec.yaml`, `build.gradle`
 - Version constants or enums in source code
-- Spec document headers or version iteration tables
-- Git tags (`git tag --sort=-version:refname | head -5`)
 - `CHANGELOG.md`, `RELEASES.md`, or release notes
+- Git tags (`git tag --sort=-version:refname | head -5`)
 
-**If version name NOT found:**
+**If version name found:** Ask user to confirm with `AskUserQuestion`:
 
-1. STOP immediately
-2. Warn the user with a clear message:
+> 在源代码中找到了版本名称：**V2.3.0**（来源：[file path or config key]）。请确认这是否正确？
 
-> 无法在提供的源代码/规格文档中找到版本名称。用户手册必须关联一个明确的版本名称。请确认项目包含版本信息（如版本号、版本名称、发布标签等）后再重试。
+Options: "确认，版本正确" / "版本不对，我来提供"
 
-3. Do NOT proceed with manual generation until the user provides or confirms a version name.
+**If version name NOT found:** Use the short commit hash (first 7 characters) as the version identifier. No need to ask the user — proceed directly.
 
-**If version name found:** Do NOT proceed automatically. You MUST ask the user to confirm the version before continuing:
-
-1. Present the found version to the user using `AskUserQuestion`:
-   > 在您的源代码/规格文档中找到了以下版本名称：**V2.3.0**（来源：[file path or config key]）。请确认这是否是正确的版本名称？
-
-   Provide two options: "确认，版本正确" and "版本不对，我来提供"
-2. **If user confirms:** Record the version. Continue to Step 2.
-3. **If user says the version is wrong:** Ask the user to provide the correct version name. Once provided, record it. If the user cannot or refuses to provide a correct version, STOP — do not proceed.
-4. The confirmed version will be included in the manual header.
+> 未在源代码中找到明确的版本名称，将使用 commit 短哈希 `abc1234` 作为版本标识。
 
 ### Step 2: Analyze Project for Operation Flows
 
-Read the provided source code or spec documents to understand:
+Read the provided source code to understand:
 
 - What the project does (core value proposition)
 - Target users and their roles
@@ -158,7 +240,7 @@ Skip this step entirely. Generate manual without screenshots.
 
 ### Step 4: Generate the Manual
 
-Follow the Manual Structure and Quality Standards below.
+Follow the Manual Structure and Quality Standards below. **The anchor block MUST be the first content in the file.**
 
 ### Step 5: Auto-Capture Screenshots (Web Frontend Only)
 
@@ -182,47 +264,26 @@ After the manual markdown file is written with screenshot placeholders:
 
 Before starting, verify these inputs exist:
 
-1. **Legacy user manual** — an existing user manual file (may contain screenshots)
-2. **Newer source code/spec** — updated project documentation
-3. **Version history** — see discovery steps below
-
-### Version History Discovery
-
-**Search the provided input files first.** Version history is often embedded in specs or source code. Search in this order:
-
-1. **Spec documents** — version iteration tables, changelog sections, release notes, "版本历史" / "更新记录" headings
-2. **Source code** — `CHANGELOG.md`, `RELEASES.md`, `HISTORY.md`, git commit messages, version comparison tables in documentation files
-
-**If version history found in input files:** Proceed with Mode 2 workflow.
-
-**If version history NOT found in any input file:** Ask the user using AskUserQuestion:
-
-> 在提供的文件中未找到版本迭代历史。更新用户手册需要了解新旧版本之间的功能变更。请提供以下任一信息：
->
-> 1. 版本迭代文档（包含功能变更记录的文件路径）
-> 2. 版本变更的关键差异说明（如：新增了哪些功能、修改了哪些功能、删除了哪些功能）
->
-> 或者您可以直接说明从旧版本到新版本的主要变更内容。
-
-If the user provides the changes directly, use that as the version history. If the user cannot provide any version history, STOP — this mode cannot proceed without it.
+1. **Legacy user manual** — an existing user manual file
+2. **Newer source code** — a git project directory (validated via Prerequisites checks)
 
 ### Workflow
 
 ```dot
 digraph update_flow {
+  "Git validation on new source" [shape=box];
   "Read legacy manual" [shape=box];
-  "Extract legacy version name" [shape=box];
-  "Read newer source/spec" [shape=box];
-  "Extract newest version name" [shape=box];
-  "Ask user to confirm versions" [shape=box];
-  "User confirms versions?" [shape=diamond];
-  "Search input files for version history" [shape=box];
-  "Version history found?" [shape=diamond];
-  "Ask user for version history or changes" [shape=box];
+  "Extract anchor block from legacy" [shape=box];
+  "Anchor found + parseable?" [shape=diamond];
+  "Ask user for old branch + commit" [shape=box];
   "User provided?" [shape=diamond];
   "STOP: cannot proceed" [shape=box];
-  "Anchor legacy version in version history" [shape=box];
-  "Identify changes between versions" [shape=box];
+  "Get new branch + commit" [shape=box];
+  "Same branch?" [shape=diamond];
+  "STOP: branch mismatch error" [shape=box];
+  "git log between commits" [shape=box];
+  "git diff between commits" [shape=box];
+  "Summarize project changes" [shape=box];
   "Legacy has screenshots?" [shape=diamond];
   "Map changes to screenshot actions" [shape=box];
   "Has new/replaced screenshots?" [shape=diamond];
@@ -230,27 +291,26 @@ digraph update_flow {
   "Ask: auto-capture changed screenshots?" [shape=box];
   "User agrees to auto-capture?" [shape=diamond];
   "Update manual content" [shape=box];
-  "Write to NEW file" [shape=box];
+  "Write to NEW file with new anchor" [shape=box];
   "Copy legacy screenshots to new manual" [shape=box];
   "Invoke take-screenshots for changed only" [shape=box];
-  "Output screenshot modification table in terminal" [shape=box];
+  "Output screenshot modification table" [shape=box];
   "Done" [shape=doublecircle];
 
-  "Read legacy manual" -> "Extract legacy version name";
-  "Extract legacy version name" -> "Read newer source/spec";
-  "Read newer source/spec" -> "Extract newest version name";
-  "Extract newest version name" -> "Ask user to confirm versions";
-  "Ask user to confirm versions" -> "User confirms versions?";
-  "User confirms versions?" -> "Search input files for version history" [label="yes"];
-  "User confirms versions?" -> "STOP: cannot proceed" [label="no (refuse to provide)"];
-  "Search input files for version history" -> "Version history found?";
-  "Version history found?" -> "Anchor legacy version in version history" [label="yes"];
-  "Version history found?" -> "Ask user for version history or changes" [label="no"];
-  "Ask user for version history or changes" -> "User provided?";
-  "User provided?" -> "Anchor legacy version in version history" [label="yes"];
+  "Git validation on new source" -> "Read legacy manual";
+  "Read legacy manual" -> "Extract anchor block from legacy";
+  "Extract anchor block from legacy" -> "Anchor found + parseable?";
+  "Anchor found + parseable?" -> "Get new branch + commit" [label="yes"];
+  "Anchor found + parseable?" -> "Ask user for old branch + commit" [label="no"];
+  "Ask user for old branch + commit" -> "User provided?";
+  "User provided?" -> "Get new branch + commit" [label="yes"];
   "User provided?" -> "STOP: cannot proceed" [label="no"];
-  "Anchor legacy version in version history" -> "Identify changes between versions";
-  "Identify changes between versions" -> "Legacy has screenshots?";
+  "Get new branch + commit" -> "Same branch?";
+  "Same branch?" -> "git log between commits" [label="yes"];
+  "Same branch?" -> "STOP: branch mismatch error" [label="no"];
+  "git log between commits" -> "git diff between commits";
+  "git diff between commits" -> "Summarize project changes";
+  "Summarize project changes" -> "Legacy has screenshots?";
   "Legacy has screenshots?" -> "Map changes to screenshot actions" [label="yes"];
   "Legacy has screenshots?" -> "Update manual content" [label="no"];
   "Map changes to screenshot actions" -> "Has new/replaced screenshots?";
@@ -261,59 +321,111 @@ digraph update_flow {
   "Ask: auto-capture changed screenshots?" -> "User agrees to auto-capture?";
   "User agrees to auto-capture?" -> "Update manual content" [label="yes"];
   "User agrees to auto-capture?" -> "Update manual content" [label="no"];
-  "Update manual content" -> "Write to NEW file";
-  "Write to NEW file" -> "Copy legacy screenshots to new manual";
+  "Update manual content" -> "Write to NEW file with new anchor";
+  "Write to NEW file with new anchor" -> "Copy legacy screenshots to new manual";
   "Copy legacy screenshots to new manual" -> "Invoke take-screenshots for changed only" [label="auto-capture agreed"];
-  "Copy legacy screenshots to new manual" -> "Output screenshot modification table in terminal" [label="no auto-capture"];
-  "Invoke take-screenshots for changed only" -> "Output screenshot modification table in terminal";
-  "Output screenshot modification table in terminal" -> "Done";
+  "Copy legacy screenshots to new manual" -> "Output screenshot modification table" [label="no auto-capture"];
+  "Invoke take-screenshots for changed only" -> "Output screenshot modification table";
+  "Output screenshot modification table" -> "Done";
 }
 ```
 
-### Step 1: Anchor Versions
+### Step 1: Read Anchor Block from Legacy Manual
 
-Extract version names from both inputs:
+Parse the legacy manual to find the `anchor` code block at the beginning of the file:
 
-- **Legacy manual** — the version the manual was written for (from manual header or metadata)
-- **Newer source/spec** — the latest version
+```
+​```anchor
+branch: <branch-name>
+commit: <full-commit-hash>
+message: <commit-message>
+​```
+```
 
-**CRITICAL: Version confirmation required.** After extracting versions, you MUST ask the user to confirm both version names before proceeding:
+Extract the `branch` and `commit` values.
 
-1. Present the extracted versions using `AskUserQuestion`:
-   > 从您的输入文件中识别到以下版本信息：
-   > - **旧版本（原有手册）**：V1.0.0（来源：[manual filename]）
-   > - **新版本（最新代码/文档）**：V2.3.0（来源：[config file or spec]）
-   >
-   > 请确认这些版本是否正确？如有任一版本不正确，请提供准确的版本名称。
+**If the anchor block is found and parseable:** Record the old branch and old commit. Proceed to Step 2.
 
-   Provide two options: "确认，两个版本都正确" and "版本不对，我来纠正"
-2. **If user confirms:** Proceed to anchor the legacy version in the version history.
-3. **If user says versions are wrong:** Ask the user to provide the correct version names for each incorrect version. Once corrected, proceed.
-4. **If user cannot or refuses to provide correct versions:** STOP — do not proceed.
+**If the anchor block is MISSING or cannot be parsed (missing branch/commit fields):**
 
-Anchor the legacy version in the version history. Determine the full scope of changes: everything from the legacy version up to the newest version.
+Do NOT proceed automatically. Ask the user with `AskUserQuestion`:
 
-### Step 2: Identify Changes
+> 旧用户手册中缺少有效的 `anchor` 代码块，无法确定旧手册是基于哪个分支的哪个 commit 生成的。请提供以下信息：
+>
+> 1. 旧手册对应的 **分支名称**
+> 2. 旧手册对应的 **commit 编号**（完整的哈希值）
+>
+> 您可以在旧手册生成时的项目目录中运行 `git log --oneline` 查找对应的 commit。
 
-From version history, categorize each change:
+If the user provides both branch and commit → use them as old branch/commit. Proceed to Step 2.
+If the user cannot provide this information → STOP. Do not continue with update mode.
+
+### Step 2: Compare Branches
+
+Get the new source's branch and commit from the Prerequisites git validation (already captured).
+
+Compare the old branch (from legacy anchor) with the new branch (from current source):
+
+**If branches are DIFFERENT:**
+
+> 错误：分支不匹配。旧手册基于分支 **`old-branch`**（commit `old-hash`）生成，而当前源码在分支 **`new-branch`**（commit `new-hash`）上。跨分支更新用户手册不受支持，因为两个分支的开发历史不可比。请切换到与旧手册相同的分支（`old-branch`）后重试，或在该分支上以 Mode 1 重新生成手册。
+
+STOP. Do not continue.
+
+**If branches are the SAME:** Proceed to Step 3.
+
+### Step 3: Analyze Git History Between Commits
+
+Use git commands to discover all changes between the old commit and the new commit:
+
+```bash
+# List all commits between old and new (oldest first)
+git log --oneline <old-commit>..<new-commit>
+
+# Show full commit messages between old and new
+git log <old-commit>..<new-commit> --format="%h %s%n%b"
+
+# Show file-level diff summary
+git diff --stat <old-commit>..<new-commit>
+
+# Show detailed diff (filter to meaningful files, skip lock files, dist, etc.)
+git diff <old-commit>..<new-commit> -- . ':(exclude)package-lock.json' ':(exclude)yarn.lock' ':(exclude)dist/*' ':(exclude)node_modules/*'
+```
+
+**Summarize the project changes** by categorizing each commit and its file changes:
 
 | Change Type | Manual Action | Screenshot Impact |
 |------------|---------------|-------------------|
-| New feature | Add new section (follow Section Template) | Add new screenshot placeholders |
+| New feature (new files, new UI) | Add new section (follow Section Template) | Add new screenshot placeholders |
 | Modified feature (UI changed) | Update section content + steps | Replace existing screenshots |
 | Modified feature (logic only, same UI) | Update text, keep steps if flow unchanged | Keep existing screenshots |
-| Removed feature | Remove section entirely | Remove screenshots |
-| UI redesign (structural) | Rewrite affected sections | Replace all affected screenshots |
-| Bug fix (user-facing) | Update affected steps if behavior changed | Replace if UI changed |
-| Bug fix (internal) | No change needed | No change needed |
+| Removed feature (files deleted) | Remove section entirely | Remove screenshots |
+| UI redesign (structural layout changes) | Rewrite affected sections | Replace all affected screenshots |
+| Bug fix (user-facing behavior change) | Update affected steps | Replace if UI changed |
+| Bug fix (internal, no user impact) | No change needed | No change needed |
+| Refactor/dependency/config changes | No change needed | No change needed |
 
-### Step 3: Handle Screenshots in Legacy Manual
+**Report the summary to the user** before proceeding:
+
+> 从旧 commit `abc1234` 到新 commit `def5678` 共发现 [N] 个 commit，变更总结如下：
+>
+> - 新增功能：[list new features]
+> - 修改功能：[list modified features]
+> - 删除功能：[list removed features]
+> - UI 变更：[list UI changes]
+> - 其他变更（无需更新手册）：[list refactors/bugfixes/etc.]
+>
+> 将基于以上变更更新用户手册。是否继续？
+
+Wait for user confirmation before updating the manual content.
+
+### Step 4: Handle Screenshots in Legacy Manual
 
 When the legacy manual contains screenshots (`【图X：...】` placeholders or embedded images):
 
 1. **Inventory** all existing screenshots from the legacy manual
 2. **Map** each screenshot to its associated feature/section
-3. **Cross-reference** with the change list from Step 2
+3. **Cross-reference** with the change list from Step 3
 4. **Determine action** for each screenshot: add, replace, remove, or keep
 
 Update screenshot placeholders in the new manual:
@@ -323,7 +435,7 @@ Update screenshot placeholders in the new manual:
 - Remove placeholders for deleted features
 - Add new placeholders for new features
 
-### Step 3.5: Determine Auto-Capture Eligibility (Update Mode)
+### Step 5: Determine Auto-Capture Eligibility (Update Mode)
 
 After determining screenshot actions (新增/替换/保留/删除), check if auto-capture can be used for screenshots that need to change. The same qualification criteria as Mode 1 Step 3 apply:
 
@@ -339,34 +451,35 @@ Ask the user using AskUserQuestion:
 >
 > 请问是否需要为变更的截图自动截图？
 
-- If user agrees → Proceed to Step 4 and Step 5 (auto-capture after writing).
+- If user agrees → Proceed to Step 6 and Step 7 (auto-capture after writing).
 - If user declines → Proceed without auto-capture. New/replaced screenshots will be listed in the modification table for manual creation.
 
 **If the project does NOT qualify (CLI, TUI, desktop, mobile, no source/URL):**
 
-Skip auto-capture. All new/replaced screenshots must be created manually. Proceed to Step 4.
+Skip auto-capture. All new/replaced screenshots must be created manually. Proceed to Step 6.
 
 **If there are NO screenshots marked 新增 or 替换 (only 保留 and/or 删除):**
 
-Skip auto-capture. No new screenshots needed. Proceed directly to Step 4.
+Skip auto-capture. No new screenshots needed. Proceed directly to Step 6.
 
-### Step 4: Update Manual Content
+### Step 6: Update Manual Content
 
 1. Read the legacy manual structure
-2. Apply changes based on identified differences
+2. Apply changes based on the git history analysis from Step 3
 3. Add new sections for new features (follow Section Template below)
 4. Update existing sections for modified features (focus on operation flow changes)
 5. Remove sections for removed features
-6. Update version name in the manual header to the newest version
-7. **Write output to a NEW file** — never overwrite the legacy manual
-8. **Copy screenshot files from the legacy manual** — if the legacy manual has associated screenshot files (in its `screenshots/` directory), copy all **kept** screenshots to the new manual's `screenshots/` directory. For **replaced** screenshots: copy them too as fallback (they will be overwritten if auto-capture is used in Step 5). For **新增** screenshots: they will be captured by auto-capture (Step 5) if the user agreed, otherwise the user creates them manually.
-9. Output the Screenshot Modification Table in terminal (NOT in the output file)
+6. **Replace the anchor block** with the new git info (new branch, new commit, new message)
+7. Update the version name in the manual header
+8. **Write output to a NEW file** — never overwrite the legacy manual
+9. **Copy screenshot files from the legacy manual** — if the legacy manual has associated screenshot files (in its `screenshots/` directory), copy all **kept** screenshots to the new manual's `screenshots/` directory. For **replaced** screenshots: copy them too as fallback (they will be overwritten if auto-capture is used in Step 7). For **新增** screenshots: they will be captured by auto-capture (Step 7) if the user agreed, otherwise the user creates them manually.
+10. Output the Screenshot Modification Table in terminal (NOT in the output file)
 
 ### Screenshot Modification Table
 
 Output this table **directly in the terminal** after writing the new file. Do NOT include it in the output markdown file.
 
-If auto-capture was used (Step 5), add "（已自动截取）" suffix to the 修改说明 for successfully captured screenshots, and "（自动截取失败，需手动创建）" for failed ones.
+If auto-capture was used (Step 7), add "（已自动截取）" suffix to the 修改说明 for successfully captured screenshots, and "（自动截取失败，需手动创建）" for failed ones.
 
 ```
 ## 截图修改清单
@@ -381,11 +494,11 @@ If auto-capture was used (Step 5), add "（已自动截取）" suffix to the 修
 
 Action types: **新增** (add), **替换** (replace), **删除** (remove), **保留** (keep)
 
-### Step 5: Auto-Capture for Changed Screenshots (Update Mode, Web Frontend Only)
+### Step 7: Auto-Capture for Changed Screenshots (Update Mode, Web Frontend Only)
 
-**Only execute this step if** the user agreed to auto-capture in Step 3.5 AND there are screenshots marked 新增 or 替换.
+**Only execute this step if** the user agreed to auto-capture in Step 5 AND there are screenshots marked 新增 or 替换.
 
-After Steps 3-4 are complete (manual written to NEW file, legacy screenshots copied):
+After Steps 4-6 are complete (manual written to NEW file, legacy screenshots copied):
 
 1. **Identify target screenshots**: From the modification table, extract only the screenshots marked **新增** or **替换**. Screenshots marked **保留** are already copied from the legacy manual.
 
@@ -403,9 +516,19 @@ After Steps 3-4 are complete (manual written to NEW file, legacy screenshots cop
 
 ## Manual Structure
 
-### Version Header
+### Anchor Block (MANDATORY — First Content)
 
-**MANDATORY.** The version name extracted in Step 1 must appear in the manual. The manual is INVALID without a version name.
+The anchor block MUST be the very first content in every generated manual file:
+
+```
+​```anchor
+branch: main
+commit: abc123def456789012345678901234567890abcd
+message: feat: add user authentication and role management
+​```
+```
+
+### Version Header
 
 ```markdown
 # Project Name — 用户使用手册
@@ -626,14 +749,17 @@ This ensures the user knows exactly where to put screenshots and what to name th
 
 | Mistake | Fix |
 |---------|-----|
+| Proceeding without source code | STOP and error — source code (git repo) is mandatory |
+| Proceeding with dirty working tree | STOP and error — `git diff HEAD` must be empty |
+| Proceeding with no git commits | STOP and error — project must have at least one commit |
+| Missing anchor block in generated manual | Always write the anchor block as the first content in the file |
+| Anchor block has wrong format | Use exact format: branch, commit, message fields |
+| Mode 2: proceeding without parsing anchor | If old manual has no anchor or it's malformed, ask user for old branch + commit |
+| Mode 2: proceeding across different branches | STOP and error — branches must match; cross-branch updates are unsupported |
+| Mode 2: not running git log/diff | Always run `git log` and `git diff` between old and new commits to summarize changes |
+| Mode 2: not reporting change summary to user | Always present the git history analysis to user before updating manual content |
 | Organizing by technical modules | Reorganize by user operation flows |
-| Missing version name | Always extract and validate version before generating |
-| Using unconfirmed version name | After finding a version, always ask user to confirm it's correct before proceeding. Never auto-use a version without confirmation |
 | Overwriting legacy manual in update mode | Always write to a new file |
-| Skipping version validation | STOP if no version found in source/spec |
-| Not confirming both versions in update mode | In Mode 2, confirm BOTH legacy and newest versions with user. Either could be wrong |
-| Not confirming versions in update mode | Same confirmation rule as Mode 1 applies — never auto-use versions found in source/spec without user confirmation |
-| Ignoring version history in update mode | Anchor versions to determine exact change scope |
 | Writing for developers | Remove all technical jargon (API, endpoint, component) |
 | Skipping error scenarios | Include error tables for every user-facing failure |
 | Too few screenshots | At minimum: login, home, core feature, one result view |
@@ -650,7 +776,7 @@ This ensures the user knows exactly where to put screenshots and what to name th
 | Mermaid flowchart uses technical terms | Use user-facing action names, not module/API names |
 | Not using auto-capture for web frontend projects | When project qualifies (web frontend + source/URL), offer auto-capture via `auto-capture-for-webapp:take-screenshots` before falling back to manual placeholders |
 | Not invoking take-screenshots skill after generating manual | When auto-capture is agreed, invoke `Skill` tool with `auto-capture-for-webapp:take-screenshots` immediately after writing the manual file |
-| Not checking auto-capture eligibility when updating manual | In update mode, if there are 新增/替换 screenshots and the project is a web frontend, offer auto-capture (Step 3.5) before writing the manual |
+| Not checking auto-capture eligibility when updating manual | In update mode, if there are 新增/替换 screenshots and the project is a web frontend, offer auto-capture (Step 5) before writing the manual |
 | Not invoking auto-capture for changed screenshots in update mode | When auto-capture is agreed in update mode, invoke `Skill` tool with `auto-capture-for-webapp:take-screenshots` for ONLY the 新增/替换 screenshots (not all screenshots) |
 | Auto-capturing all screenshots in update mode (including kept ones) | Only capture 新增 and 替换 screenshots. 保留 screenshots are copied from legacy `screenshots/` directory. Capturing all wastes time and the kept pages may not have changed |
 
@@ -659,6 +785,12 @@ This ensures the user knows exactly where to put screenshots and what to name th
 ## Example Output Structure
 
 ```markdown
+​```anchor
+branch: main
+commit: abc123def456789012345678901234567890abcd
+message: feat: initial project setup with user authentication
+​```
+
 # Project Name — 用户使用手册
 
 **版本：V2.3.0**
