@@ -1,13 +1,13 @@
 ---
 name: generating-html-manual
-description: Use when the user has a Markdown user manual and wants to convert it to a styled standalone HTML page with left sidebar navigation, back-to-top button, and company branding. Triggers on keywords like "HTML manual", "convert to HTML", "生成HTML手册", "转HTML", "HTML版本".
+description: Use when the user has a Markdown user manual and wants to convert it to a styled HTML page with left sidebar navigation, back-to-top button, and company branding. Supports multi-file output (HTML + external CSS/JS) and multi-language i18n. Triggers on keywords like "HTML manual", "convert to HTML", "生成HTML手册", "转HTML", "HTML版本".
 ---
 
 # Generating HTML Manual
 
 ## Overview
 
-Convert a Markdown user manual into a self-contained, styled HTML page with sidebar catalogue navigation, back-to-top button, and company branding. Output is a folder containing the HTML file plus all referenced media assets.
+Convert a Markdown user manual into a styled HTML page with sidebar catalogue navigation, back-to-top button, and company branding. Output is a folder containing `index.html` plus external CSS, JavaScript, i18n files, and all referenced media assets.
 
 ## When to Use
 
@@ -26,17 +26,19 @@ Convert a Markdown user manual into a self-contained, styled HTML page with side
 
 **DEVELOPMENT METHODOLOGY — TDD Required (RED-GREEN-REFACTOR):**
 
-This skill generates a standalone single HTML webpage. **HTML code generation (Steps 3-4) MUST follow the superpowers TDD cycle:**
+This skill generates an HTML webpage with external CSS/JS/i18n files. **HTML code generation (Steps 3-4) MUST follow the superpowers TDD cycle:**
 
 1. **RED — Write failing tests first:** Before writing ANY HTML/CSS/JS code, write test assertions for each structure, style, and behavior. Tests must verify:
    - Correct heading hierarchy and ID slugs (anchor IDs are **always** lowercase English words with hyphen separators, regardless of content language; Chinese/Russian/Japanese/Korean/Arabic titles are translated to English for anchors; NEVER use pinyin or transliteration — e.g., `system-settings-export-path`, not `xi-tong-she-zhi`)
    - TOC link targets resolve to valid heading IDs
-   - Sidebar toggle behavior — menu icon (☰) positioned left of the logo in the header toggles sidebar fold/unfold; sidebar defaults to visible (280px width), content area expands when sidebar is folded; toggle works at all screen sizes
+   - Sidebar toggle is a **pure icon button** (☰, no visible text) positioned left of the logo in the header; clicking toggles sidebar fold/unfold; sidebar defaults to visible (280px width), content area expands when sidebar is folded; toggle works at all screen sizes; icon does NOT change between states
    - Anchor scroll offset prevents fixed header from hiding targets
    - Back-to-top button visibility (hidden at top, visible after scroll > 400px)
-   - Sidebar toggle works correctly at all screen sizes (menu icon always visible, fold/unfold animation smooth, content area reflows correctly)
+   - Sidebar toggle works correctly at all screen sizes (icon button always visible, fold/unfold animation smooth, content area reflows correctly)
    - Contrast rules (no dark text on dark backgrounds)
    - Media path correctness (all `src`/`href` point to files that exist in `media/`)
+   - All external file references resolve correctly (`style/*.css`, `scripts/*.js`, `i18n/*.js` — all relative paths from `index.html`)
+   - Output directory contains all required subdirectories (`style/`, `scripts/`, `media/`) plus `i18n/` for multi-language
    - Print styles hide navigation chrome
    - URL `?lang=` parameter correctly sets language on page load (priority: URL > localStorage > default)
    - URL `?lang=` with unsupported language code falls through to localStorage, then default
@@ -52,7 +54,12 @@ This skill generates a standalone single HTML webpage. **HTML code generation (S
    - Default language images render at the correct paths on initial load
    - Code blocks and Mermaid diagrams are duplicated per `.lang-content` block when they contain translatable text
    - Single-language pages do NOT use `.lang-content` wrappers — output plain HTML body directly
-2. **GREEN — Write minimal code to pass:** Generate the HTML body, apply the template, wire up interactivity — one test at a time. Each increment of HTML/CSS/JS must correspond to a test that was already written and seen to fail.
+   - Multi-language pages have one i18n file per language in `i18n/` directory (e.g., `i18n/zh.js`, `i18n/en.js`, `i18n/ru.js`)
+   - Each i18n file defines `I18N['{lang}']` with all UI chrome translation keys (toc-title, back-to-top, footer-copyright, lang-switcher-label)
+   - `scripts/main.js` initializes `const I18N = {};` before any i18n files are loaded
+   - Sidebar toggle button has NO `data-i18n` attribute and NO translatable text (pure icon)
+   - No `fold-sidebar` or `expand-sidebar` keys exist in any i18n file
+2. **GREEN — Write minimal code to pass:** Generate the HTML body, create external CSS/JS/i18n files, wire up interactivity — one test at a time. Each increment of HTML/CSS/JS must correspond to a test that was already written and seen to fail.
 3. **REFACTOR — Improve while keeping tests green:** Deduplicate styles, optimize selectors, streamline event handlers, improve semantic markup. Never add new behavior during refactoring.
 
 **REQUIRED SUB-SKILL:** Use `superpowers:test-driven-development` to guide this process — it defines the RED-GREEN-REFACTOR discipline and rationalization countermeasures that keep TDD honest.
@@ -69,24 +76,26 @@ digraph html_manual {
   "Read markdown input" [shape=box];
   "Parse headings for TOC" [shape=box];
   "Identify media references" [shape=box];
-  "Generate output folder" [shape=box];
+  "Generate output folder with style/scripts/i18n/media dirs" [shape=box];
   "Copy media files to output folder" [shape=box];
   "Convert markdown to HTML body" [shape=box];
-  "Apply HTML template with sidebar + branding + i18n" [shape=box];
-  "Write index.html to output folder" [shape=box];
-  "Verify all media paths are valid" [shape=box];
+  "Generate external CSS files in style/" [shape=box];
+  "Generate external JS files in scripts/ and i18n/" [shape=box];
+  "Write index.html + all external files to output folder" [shape=box];
+  "Verify all paths and references are valid" [shape=box];
   "Done" [shape=doublecircle];
 
   "Ask user for language selection" -> "Read markdown input";
   "Read markdown input" -> "Parse headings for TOC";
   "Parse headings for TOC" -> "Identify media references";
-  "Identify media references" -> "Generate output folder";
-  "Generate output folder" -> "Copy media files to output folder";
+  "Identify media references" -> "Generate output folder with style/scripts/i18n/media dirs";
+  "Generate output folder with style/scripts/i18n/media dirs" -> "Copy media files to output folder";
   "Copy media files to output folder" -> "Convert markdown to HTML body";
-  "Convert markdown to HTML body" -> "Apply HTML template with sidebar + branding + i18n";
-  "Apply HTML template with sidebar + branding + i18n" -> "Write index.html to output folder";
-  "Write index.html to output folder" -> "Verify all media paths are valid";
-  "Verify all media paths are valid" -> "Done";
+  "Convert markdown to HTML body" -> "Generate external CSS files in style/";
+  "Generate external CSS files in style/" -> "Generate external JS files in scripts/ and i18n/";
+  "Generate external JS files in scripts/ and i18n/" -> "Write index.html + all external files to output folder";
+  "Write index.html + all external files to output folder" -> "Verify all paths and references are valid";
+  "Verify all paths and references are valid" -> "Done";
 }
 ```
 
@@ -124,9 +133,13 @@ Supported language codes: `zh` (Simplified Chinese), `en` (English), `ru` (Russi
 ### Step 2: Create Output Folder
 
 1. Create a new folder next to the input markdown file, named `{manual-name}-html/`
-2. Create the `media/` directory structure based on language count:
-   - **Single-language** (`LANGS` has 1 item, e.g., `zh`): Create one `media/` subfolder
-   - **Multi-language** (`LANGS` has >1 item, e.g., `zh,en,ru`): Create `media/{lang}/` subfolder for **each** language in `LANGS` (e.g., `media/zh/`, `media/en/`, `media/ru/`)
+2. Create the directory structure:
+   - `style/` — external CSS stylesheets (one or more `.css` files)
+   - `scripts/` — external JavaScript files (one or more `.js` files for page logic)
+   - `i18n/` — language translation files (one `.js` file per language, e.g., `zh.js`, `en.js`, `ru.js`). Only created when multi-language (`LANGS` has >1 item). Skip for single-language pages.
+   - `media/` — media assets with language subfolder structure:
+     - **Single-language** (`LANGS` has 1 item, e.g., `zh`): Create one `media/` subfolder
+     - **Multi-language** (`LANGS` has >1 item, e.g., `zh,en,ru`): Create `media/{lang}/` subfolder for **each** language in `LANGS` (e.g., `media/zh/`, `media/en/`, `media/ru/`)
 3. Copy all referenced media files (screenshots, diagrams, etc.):
    - **Single-language:** Copy to `media/` directly
    - **Multi-language:** Copy each media file to **ALL** language subfolders (e.g., `1-login.png` → `media/zh/1-login.png` + `media/en/1-login.png` + `media/ru/1-login.png`). Screenshots are identical across languages — this isolation ensures each language has its own complete media set.
@@ -239,7 +252,15 @@ Rationale: Screenshots and diagrams are informational content, not decorative el
 
 ### Step 4: Apply HTML Template
 
-Generate a complete standalone HTML page with the following structure and design specs. All styles and scripts must be inline — single `index.html` output, with the exception of the Mermaid.js CDN script (see Mermaid & Flowchart Handling section).
+Generate a complete HTML page with the following structure and design specs. Styles and scripts should be external files referenced via relative paths from `index.html`:
+
+- **CSS files** go in `style/` directory (e.g., `style/main.css`, `style/components.css`)
+- **JS files** go in `scripts/` directory (e.g., `scripts/main.js`, `scripts/sidebar.js`)
+- **i18n files** go in `i18n/` directory (e.g., `i18n/zh.js`, `i18n/en.js`, `i18n/ru.js`) — one file per language
+- **Mermaid.js** is loaded via CDN in the HTML `<head>` (no local copy needed)
+- **Company logo images** are referenced from `media/` (single-lang) or `media/{lang}/` (multi-lang)
+
+All external files are referenced from `index.html` using relative paths (e.g., `<link rel="stylesheet" href="style/main.css">`, `<script src="scripts/main.js"></script>`, `<script src="i18n/zh.js"></script>`).
 
 #### Page Structure
 
@@ -259,14 +280,14 @@ Generate a complete standalone HTML page with the following structure and design
 | `{{TOC}}` | Generated sidebar TOC from headings |
 | `{{DEFAULT_LANG}}` | First language code from `LANGS` (e.g., `zh`) — used in JS i18n init |
 | `{{LANGS_LIST}}` | Full `LANGS` string (e.g., `zh,en,ru`) — used to generate language switcher buttons |
-| `{{I18N_OBJECT}}` | Complete JavaScript `I18N` object with translations for all languages in `LANGS` |
+| `{{I18N_SCRIPTS}}` | `<script>` tags loading each language's i18n file from `i18n/` directory (e.g., `<script src="i18n/zh.js"></script><script src="i18n/en.js"></script>`). Empty string if single-language. |
 | `{{LANG_SWITCHER}}` | HTML markup for the language switcher button row (empty string if single-language) |
 
 #### Layout Specs
 
 | Element | Spec |
 |---------|------|
-| Header height | 64px, fixed top, `z-index: 1000`. Contains menu toggle icon (☰) on the far left, then logo, title, version. When multi-language: language switcher buttons at the far right. |
+| Header height | 64px, fixed top, `z-index: 1000`. Contains menu toggle **icon button** (☰, no text) on the far left, then logo, title, version. The icon button uses only the ☰ Unicode character (or equivalent SVG icon) with no visible text label — it is a pure icon. When multi-language: language switcher buttons at the far right. |
 | Sidebar width | 280px, fixed left, `z-index: 900`. Defaults to visible. Toggled by the header menu icon. Use CSS `transition` on `transform` or `margin-left` for smooth fold/unfold animation. |
 | Content max-width | 900px, centered. Content area has `margin-left: 280px` when sidebar is visible; transitions to `margin-left: 0` (or auto-centered) when sidebar is folded. |
 | Anchor scroll offset | CSS: `scroll-margin-top: 80px` on all `h2`/`h3`. JS: intercept TOC link clicks, call `scrollIntoView()` with manual offset for the 64px header + 16px breathing room |
@@ -289,14 +310,14 @@ Generate a complete standalone HTML page with the following structure and design
 
 #### Sidebar Toggle Behavior
 
-The sidebar can be folded/unfolded via the menu icon (☰) in the header:
+The sidebar can be folded/unfolded via the menu icon button (☰) in the header:
 
-1. **Menu icon position:** The ☰ icon sits to the **left of the logo** in the header bar. It is always visible.
+1. **Menu icon button:** The ☰ icon (or equivalent hamburger icon SVG) is a **pure icon button with no visible text label**. It sits to the **left of the logo** in the header bar. It is always visible. The button may have an `aria-label` for accessibility (e.g., `aria-label="Toggle sidebar"`) but no visible text.
 2. **Default state:** Sidebar visible (unfolded), 280px width. Content area has `margin-left: 280px`.
 3. **Folded state:** Sidebar hidden. Content area expands to full width (centered via auto margins, max-width 900px).
-4. **Toggle action:** Clicking the menu icon toggles between folded and unfolded states. Use CSS transitions for smooth animation.
+4. **Toggle action:** Clicking the icon button toggles between folded and unfolded states. Use CSS transitions for smooth animation. The icon itself does NOT change (☰ stays ☰ in both states).
 5. **localStorage persistence:** Persist the sidebar fold state in `localStorage` so the user's preference is remembered across page loads.
-6. **TOC link clicks:** When a TOC link is clicked, scroll to the target heading with proper offset. Do NOT fold the sidebar on link click — the user controls sidebar state explicitly via the menu icon.
+6. **TOC link clicks:** When a TOC link is clicked, scroll to the target heading with proper offset. Do NOT fold the sidebar on link click — the user controls sidebar state explicitly via the icon button.
 
 #### Anchor Scroll Behavior
 
@@ -315,10 +336,14 @@ TOC link clicks must scroll to the target heading with proper offset to prevent 
 
 ### Step 5: Verify
 
-After writing `index.html`:
-1. Check all `src="media/..."` references point to files that exist in the output folder
-2. If any media files are missing, warn the user with the list of missing files
-3. Report the output folder path to the user
+After writing all output files:
+1. Check all `src="media/..."` and `href="media/..."` references point to files that exist in the output folder
+2. Check all external file references resolve correctly:
+   - `<link rel="stylesheet" href="style/...">` → file exists in `style/`
+   - `<script src="scripts/...">` → file exists in `scripts/`
+   - `<script src="i18n/...">` → file exists in `i18n/` (multi-language only)
+3. If any files are missing, warn the user with the list of missing files
+4. Report the output folder path to the user
 
 ## TOC Generation
 
@@ -480,42 +505,60 @@ All localizable UI chrome text must use `data-i18n` attributes. Each translatabl
 
 The initial text content (before any JS runs) must be in the **default language** (first in `LANGS`). The i18n system replaces it on language switch.
 
-### Translation Map (JavaScript)
+**Note:** The sidebar toggle button is a pure icon (☰) with no visible text — it does NOT use `data-i18n` and has no translatable text. It may have an `aria-label` attribute for screen readers but no visible label.
 
-Include a JavaScript `I18N` object in the page, mapping every `data-i18n` key to translations for each language in `LANGS`:
+### Translation Files (External i18n JS)
 
+Translation text for UI chrome (data-i18n elements) is stored in **separate JavaScript files** under the `i18n/` directory — one file per language. Each file defines a `I18N[LANG]` object on the global `I18N` namespace:
+
+**`i18n/zh.js`** (Chinese):
 ```javascript
-const I18N = {
-  zh: {
-    'toc-title': '目录',
-    'back-to-top': '返回顶部',
-    'footer-copyright': '© 2026 研知教育科技 版权所有',
-    'fold-sidebar': '折叠侧边栏',
-    'expand-sidebar': '展开侧边栏',
-    'lang-switcher-label': '语言'
-  },
-  en: {
-    'toc-title': 'Contents',
-    'back-to-top': 'Back to Top',
-    'footer-copyright': '© 2026 WisQuest EdTech. All rights reserved.',
-    'fold-sidebar': 'Collapse Sidebar',
-    'expand-sidebar': 'Expand Sidebar',
-    'lang-switcher-label': 'Language'
-  },
-  ru: {
-    'toc-title': 'Содержание',
-    'back-to-top': 'Наверх',
-    'footer-copyright': '© 2026 WisQuest EdTech. Все права защищены.',
-    'fold-sidebar': 'Свернуть боковую панель',
-    'expand-sidebar': 'Развернуть боковую панель',
-    'lang-switcher-label': 'Язык'
-  }
+I18N['zh'] = {
+  'toc-title': '目录',
+  'back-to-top': '返回顶部',
+  'footer-copyright': '© 2026 研知教育科技 版权所有',
+  'lang-switcher-label': '语言'
 };
 ```
 
+**`i18n/en.js`** (English):
+```javascript
+I18N['en'] = {
+  'toc-title': 'Contents',
+  'back-to-top': 'Back to Top',
+  'footer-copyright': '© 2026 WisQuest EdTech. All rights reserved.',
+  'lang-switcher-label': 'Language'
+};
+```
+
+**`i18n/ru.js`** (Russian):
+```javascript
+I18N['ru'] = {
+  'toc-title': 'Содержание',
+  'back-to-top': 'Наверх',
+  'footer-copyright': '© 2026 WisQuest EdTech. Все права защищены.',
+  'lang-switcher-label': 'Язык'
+};
+```
+
+**Key rules for i18n files:**
+- Each file MUST define translations for ALL `data-i18n` keys used in the page
+- Keys are identical across all language files (same set of `data-i18n` keys)
+- The global `I18N` object is initialized in `scripts/main.js` before any i18n files are loaded: `const I18N = {};`
+- i18n files are loaded AFTER `scripts/main.js` and BEFORE the `DOMContentLoaded` handler fires
+- No `fold-sidebar` / `expand-sidebar` keys — the sidebar toggle is a pure icon with no text
+- The `index.html` `<head>` loads i18n files as: `<script src="i18n/zh.js"></script>` etc.
+
 ### Language Switching Implementation
 
+The page logic (`scripts/main.js`) initializes the `I18N` namespace and handles language switching. i18n translation data is loaded from external files in `i18n/`.
+
+**`scripts/main.js`** — core page logic:
+
 ```javascript
+// Global I18N namespace (populated by external i18n/xx.js files)
+const I18N = {};
+
 function switchLanguage(lang) {
   if (!I18N[lang]) return;
   document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang;
@@ -556,6 +599,36 @@ function getUrlLang() {
   return params.get('lang');
 }
 
+// Sidebar toggle (icon-only button, no text)
+function initSidebarToggle() {
+  const toggleBtn = document.getElementById('sidebar-toggle');
+  const sidebar = document.getElementById('sidebar');
+  const content = document.getElementById('content');
+  if (!toggleBtn || !sidebar) return;
+
+  // Restore saved state
+  const saved = localStorage.getItem('sidebar-folded');
+  let folded = saved === 'true';
+
+  function applyState() {
+    if (folded) {
+      sidebar.classList.add('folded');
+      content.classList.add('expanded');
+    } else {
+      sidebar.classList.remove('folded');
+      content.classList.remove('expanded');
+    }
+  }
+
+  applyState();
+
+  toggleBtn.addEventListener('click', () => {
+    folded = !folded;
+    localStorage.setItem('sidebar-folded', folded);
+    applyState();
+  });
+}
+
 // On page load: determine language with priority: URL param > localStorage > default
 // Also handle combined #anchor + ?lang= scenario (apply language first, then scroll)
 document.addEventListener('DOMContentLoaded', () => {
@@ -568,6 +641,9 @@ document.addEventListener('DOMContentLoaded', () => {
     : defaultLang;
 
   switchLanguage(lang);
+  initSidebarToggle();
+  initBackToTop();
+  initTocLinks();
 
   // Handle anchor scroll AFTER language is applied (for combined ?lang=X#anchor URLs)
   if (window.location.hash) {
@@ -585,6 +661,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 ```
+
+**Note:** The sidebar toggle button is a pure icon (☰) — it has no text and does not interact with the i18n system. The `initSidebarToggle()`, `initBackToTop()`, and `initTocLinks()` functions are placed in `scripts/main.js` alongside the language switching logic.
 
 Replace `{{DEFAULT_LANG}}` with the first language code from `LANGS` during HTML generation.
 
@@ -612,7 +690,7 @@ Images inside `.lang-content` blocks do NOT need `data-src-{lang}` — they alre
 | Back-to-top button | ✅ Yes | `data-i18n` |
 | Footer copyright | ✅ Yes | `data-i18n` |
 | Language switcher labels | ✅ Yes | `data-i18n` |
-| Sidebar toggle aria-label | ✅ Yes | `data-i18n` |
+| Sidebar toggle button | ❌ No | Pure icon (☰), no text — does NOT use `data-i18n` |
 | Body content (headings, paragraphs, tables, captions) | ✅ Yes | `.lang-content` blocks — translated in Step 3 |
 | Screenshot captions | ✅ Yes | Translated inside `.lang-content` blocks |
 | Table headers | ✅ Yes | Translated inside `.lang-content` blocks |
@@ -679,7 +757,7 @@ When `LANGS` has multiple languages, the HTML body content must contain **ALL la
 
 ### No Chinese in Non-Chinese Content
 
-**CRITICAL:** When generating the i18n translation map for non-Chinese languages:
+**CRITICAL:** When generating the i18n translation files for non-Chinese languages:
 - NEVER include Chinese characters (汉字) in English, Russian, or any other non-Chinese translation strings
 - The company name in all non-Chinese versions is `WisQuest EdTech` (English), NOT `研知教育科技`
 - Verify every translation value is in the correct script for that language
@@ -691,7 +769,11 @@ When `LANGS` has multiple languages, the HTML body content must contain **ALL la
 
 ```
 {manual-name}-html/
-├── index.html          # Complete standalone HTML
+├── index.html          # HTML page (refers to external CSS/JS by relative path)
+├── style/
+│   └── main.css        # All page styles
+├── scripts/
+│   └── main.js         # Page logic (sidebar, back-to-top, TOC links, anchor scroll)
 └── media/              # Flat media directory
     ├── 1-login.png
     ├── 2-settings.png
@@ -700,11 +782,19 @@ When `LANGS` has multiple languages, the HTML body content must contain **ALL la
     └── wisquest_white_circle_background.png
 ```
 
-**Multi-language** (`LANGS=zh,en,ru` — media isolated per language):
+**Multi-language** (`LANGS=zh,en,ru`):
 
 ```
 {manual-name}-html/
-├── index.html          # Complete standalone HTML with i18n
+├── index.html          # HTML page (refers to external CSS/JS/i18n by relative path)
+├── style/
+│   └── main.css        # All page styles
+├── scripts/
+│   └── main.js         # Page logic (sidebar, back-to-top, TOC links, language switching)
+├── i18n/
+│   ├── zh.js           # Chinese UI chrome translations
+│   ├── en.js           # English UI chrome translations
+│   └── ru.js           # Russian UI chrome translations
 └── media/
     ├── zh/             # Chinese media (default language)
     │   ├── 1-login.png
@@ -724,19 +814,26 @@ When `LANGS` has multiple languages, the HTML body content must contain **ALL la
 
 **Key rule:** Screenshots are identical across all language subfolders — the same set of media files is copied to every `media/{lang}/` directory. Logos follow the same pattern.
 
+**File splitting conventions:**
+- CSS can be a single `main.css` or split into multiple files (e.g., `layout.css`, `components.css`) — all in `style/`
+- JS can be a single `main.js` or split by concern (e.g., `sidebar.js`, `i18n.js`) — all in `scripts/`
+- i18n is always one file per language (`{lang}.js`), all in `i18n/`
+- All files are referenced from `index.html` using relative paths (e.g., `style/main.css`, `scripts/main.js`, `i18n/zh.js`)
+
 ## Common Mistakes
 
 | Mistake | Fix |
 |---------|-----|
-| Using external CSS/JS files | All styles and scripts must be inline — single `index.html` |
-| Absolute paths for media | Always use relative `media/` paths |
+| External CSS/JS/i18n files not created | Generate all external files (`style/*.css`, `scripts/*.js`, `i18n/*.js`) alongside `index.html` |
+| Wrong relative paths to external files | Use relative paths from `index.html`: `style/main.css`, `scripts/main.js`, `i18n/zh.js` |
+| Absolute paths for media or external files | Always use relative paths for all local resources |
 | Missing heading IDs | Every heading needs an `id` for TOC linking |
 | Forgetting to copy logos | Always copy all `company_style/` files |
 | Not handling duplicate heading text | Append `-2`, `-3` etc. to duplicate slugs |
 | Using non-Chinese UI text | Default to Simplified Chinese for all chrome text |
 | Overwriting original markdown | Output to a new folder, never modify the source |
 | Large images not optimized | Consider warning user if images exceed 2MB |
-| Missing print styles | Include `@media print` to hide navigation elements |
+| Missing print styles | Include `@media print` in `style/main.css` to hide navigation elements |
 | Horizontal logo on dark background | Logo text is black — header/footer must be white/light |
 | Screenshot images too large | Set `max-width: 720px; height: 450px` on all `<figure>` images (5:8 ratio, matching 1200×1920 source) |
 | Screenshot caption too long (detailed description) | Shorten to ≤10 characters after `图X：` — captions are labels, not image descriptions |
@@ -751,8 +848,9 @@ When `LANGS` has multiple languages, the HTML body content must contain **ALL la
 | Images have opacity applied (semi-transparent) | All images must be fully opaque — NEVER apply `opacity`, `transition: opacity`, or `:hover { opacity }` to `<img>`, `<figure>`, or image containers |
 | Mermaid diagram different height than screenshots | Give `<pre class="mermaid">` `height: 450px` to match screenshot height |
 | Mermaid diagram top clipped with flex | Use `display: block` (NOT `display: flex`) on `<pre class="mermaid">` to avoid overflow clipping |
-| Menu icon missing or in wrong position | Place ☰ menu icon to the **left of the logo** in the header, not to the right or standalone |
-| Sidebar toggle folds sidebar on TOC link click | Do NOT fold sidebar when a TOC link is clicked — sidebar state is controlled only by the menu icon |
+| Menu icon missing or in wrong position | Place ☰ icon button to the **left of the logo** in the header, not to the right or standalone |
+| Sidebar toggle has text label | The sidebar toggle is a **pure icon button** (☰) — no visible text, no `data-i18n`, no fold/expand labels |
+| Sidebar toggle folds sidebar on TOC link click | Do NOT fold sidebar when a TOC link is clicked — sidebar state is controlled only by the icon button |
 | Sidebar fold state not persisted | Persist sidebar fold state in `localStorage` so preference survives page reloads |
 | Sidebar toggle has no animation | Use CSS `transition` on `transform` or `margin-left` for smooth fold/unfold animation |
 | Fixed header covers anchor target on TOC click | Intercept TOC link clicks with JS, use `window.scrollTo()` with manual offset (header 64px + 16px padding) |
@@ -767,7 +865,7 @@ When `LANGS` has multiple languages, the HTML body content must contain **ALL la
 | Combined `#anchor` + `?lang=` URL not handled correctly | When URL has both `?lang=zh#some-anchor`, apply language FIRST via `switchLanguage()`, then scroll to anchor via `requestAnimationFrame` (double frame to ensure DOM is stable). Wrong order (scroll before language) causes anchor to miss target |
 | Anchor scroll on combined `?lang=` + `#` fires before i18n DOM updates complete | Use nested `requestAnimationFrame` to defer anchor scrolling until after language switch re-renders all `data-i18n` elements. Single frame may fire before DOM updates paint |
 | Language selection not asked before HTML generation | Step 0 is MANDATORY — always ask the user for language preferences before any other work |
-| i18n not implemented when `LANGS` has multiple languages | When `LANGS` contains a comma, implement full `data-i18n` + language switcher + translation map |
+| i18n not implemented when `LANGS` has multiple languages | When `LANGS` contains a comma, implement full `data-i18n` + language switcher + i18n external files |
 | Language switcher missing or in wrong position | Language switcher must be in the **top-right corner of the header**, to the right of the version string |
 | Language switcher uses dropdown instead of button row | Use a row of compact language-code buttons (`ZH` `EN` `RU`), not a `<select>` dropdown |
 | Language preference not persisted across page loads | Save to `localStorage` (key: `manual-lang`) and restore on page load |
@@ -789,3 +887,10 @@ When `LANGS` has multiple languages, the HTML body content must contain **ALL la
 | Mermaid diagrams not duplicated per language | Each `.lang-content` block needs its own `<pre class="mermaid">` if diagram labels contain human-readable text. Translate node labels per language |
 | Single-language page has `.lang-content` wrappers | Only multi-language pages use `.lang-content` blocks. Single-language pages output plain HTML body content directly |
 | Content visibility not toggled on language switch | Step 2 of `switchLanguage()` must show/hide `.lang-content` blocks based on `data-lang-content` matching the target language |
+| I18N inline object instead of external i18n files | Multi-language pages MUST use external i18n files (`i18n/{lang}.js`), not an inline `I18N` object. Each language gets its own file |
+| i18n directory missing for multi-language page | Create `i18n/` directory with one `.js` file per language in `LANGS`. Skip `i18n/` for single-language pages |
+| i18n files loaded in wrong order | `index.html` loads `scripts/main.js` first (initializes `I18N = {}`), then all `i18n/*.js` files (populate I18N). The `DOMContentLoaded` handler in `scripts/main.js` runs after all files are loaded. Do NOT use an inline `<script>` block in `index.html` |
+| `I18N` global not initialized before i18n files | `scripts/main.js` must contain `const I18N = {};` before any `i18n/xx.js` files are loaded |
+| CSS inlined in `<style>` instead of external file | CSS should be in `style/main.css` (or multiple files in `style/`), referenced via `<link rel="stylesheet">` in `index.html` |
+| JS inlined in `<script>` instead of external file | JS should be in `scripts/main.js`, referenced via `<script src="scripts/main.js">` in `index.html` |
+| Sidebar toggle has `data-i18n` or translatable text | The toggle is a pure icon (☰) — no `data-i18n`, no text content, no fold/expand labels in i18n files |
