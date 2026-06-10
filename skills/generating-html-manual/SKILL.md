@@ -56,6 +56,8 @@ This skill generates an HTML page with external CSS/JS/i18n files. Content text 
    - All UI chrome text has `data-i18n` with translations (header-title, toc-title, footer-copyright, lang-switcher-label)
    - Header title bar text switches on language change — `<span data-i18n="header-title">` in the header with translations in every `i18n/{lang}.js` file
    - No `fold-sidebar`, `expand-sidebar`, or `back-to-top` keys exist in any i18n file
+   - Default language content file is generated FIRST; other languages reuse the same anchor IDs by positional mapping
+   - Anchor IDs are byte-for-byte identical across ALL language content files (not just semantically similar)
    - Single-language pages output content directly in `index.html` — no JS injection needed
 2. **GREEN — Write minimal code to pass:** Generate the HTML body, create external CSS/JS/i18n files, wire up interactivity — one test at a time. Each increment of HTML/CSS/JS must correspond to a test that was already written and seen to fail.
 3. **REFACTOR — Improve while keeping tests green:** Deduplicate styles, optimize selectors, streamline event handlers, improve semantic markup. Never add new behavior during refactoring.
@@ -147,19 +149,37 @@ Supported language codes: `zh` (Simplified Chinese), `en` (English), `ru` (Russi
 
 ### Step 3: Translate and Convert Markdown to HTML
 
-**Multi-language: Translate first.** When `LANGS` has multiple languages, the source markdown must be translated into every target language BEFORE HTML conversion. The translation is done at the markdown level:
+**Multi-language: Sequential generation with shared anchor IDs.** When `LANGS` has multiple languages, content files MUST be generated in a specific order to guarantee identical anchor IDs across all languages:
 
-1. Parse the original markdown into semantic blocks (headings, paragraphs, tables, callouts, code blocks, mermaid blocks, figures)
-2. For each target language (except the source/default language), translate the text content of each block:
-   - Headings: translate to the target language, but keep the English anchor `id` identical (anchors are always English — see Heading ID slugs rules)
+**CRITICAL — Two-phase generation for anchor ID consistency:**
+
+**Phase A: Generate default language first.** Convert the default language (first in `LANGS`) to HTML first. This establishes the **canonical anchor IDs and TOC structure** that all other languages must match:
+
+1. Parse the source markdown into semantic blocks
+2. Assign English anchor IDs to every heading (see Heading ID slugs rules below)
+3. Generate the body HTML and TOC HTML
+4. Save as `i18n/content-{DEFAULT_LANG}.js`
+5. **Extract the anchor ID map** — a list of `{heading_level, heading_text, anchor_id}` tuples that records every heading's assigned anchor ID
+
+**Phase B: Generate other languages, reusing anchor IDs.** For every remaining language in `LANGS`:
+
+1. Translate the markdown content (headings, paragraphs, tables, callouts, figure captions, mermaid labels) to the target language
+2. **For each heading, look up its anchor ID from Phase A's anchor ID map by heading position/index** — do NOT generate new anchor IDs independently. The mapping is positional: the 1st `h2` in the default language maps to the 1st `h2` in the target language, the 2nd `h3` maps to the 2nd `h3`, etc.
+3. Generate the body HTML using the **same anchor IDs as the default language**, with only the visible heading text translated
+4. Generate the TOC HTML using the **same anchor IDs and TOC structure** as the default language, with only the link text translated
+5. Save as `i18n/content-{LANG}.js`
+
+**Why this order matters:** If each language is translated independently, the AI may generate different English anchor IDs for the same heading (e.g., "系统设置" → `system-settings` in zh but `system-config` in en). Sequential generation with the default language as the authority prevents this divergence. Anchor IDs must be **byte-for-byte identical** across all language content files — not just semantically similar.
+
+**Translation rules for each block:**
+   - Headings: translate visible text, **keep anchor `id` from Phase A map** (do not regenerate)
    - Paragraphs, table cells, callout text: translate fully
    - Screenshot captions (`<figcaption>`): translate, keeping captions concise (≤10 chars after prefix)
    - Image `alt` text: translate
    - Code blocks: do NOT translate (code is language-neutral)
-   - Mermaid diagram node labels: translate if they contain human-readable text
+   - Mermaid diagram node labels: translate if they contain human-readable text. Each language's content file has its own `<pre class="mermaid">` with translated DSL
    - Do NOT translate: file paths, URLs, version strings, technical identifiers
-3. The source/default language version is used as-is (no translation needed)
-4. Each language version is independently converted to HTML following the rules below, then saved as a JS string in `i18n/content-{lang}.js`. Each file defines `I18N_CONTENT['{lang}']` with two properties: `body` (the full content HTML) and `toc` (the sidebar TOC HTML for that language). See [Content Files](#content-files-i18ncontent-langjs) for the file format.
+   - The TOC HTML structure (heading hierarchy, nesting, class names) must match the default language byte-for-byte — only the visible link text changes
 
 **Single-language:** Skip translation. Convert the markdown directly to HTML following the rules below. Place body content directly in `#content-container` and TOC directly in `#toc-container` in `index.html`. No JS injection needed.
 
@@ -967,6 +987,8 @@ When `LANGS` has multiple languages, ALL content text is stored in external JS f
 | Mermaid init uses `startOnLoad: true` for multi-language | Use `startOnLoad: false` + call `mermaid.run()` after content injection. No diagrams exist in `index.html` at load time |
 | Anchor scroll fires before content injection completes | Defer anchor scroll until after `await switchLanguage()` completes (content + Mermaid fully rendered) |
 | Heading `id` attributes differ between language content files | Keep `id` identical across all `I18N_CONTENT` language files — anchors must resolve regardless of active language |
+| Each language content file generated independently with different anchor IDs | Generate default language FIRST, extract anchor ID map, then generate other languages reusing the same IDs by positional mapping. Never translate and assign anchors independently per language |
+| Anchor IDs semantically similar but not byte-for-byte identical (e.g., `system-settings` vs `system-config`) | Must be byte-for-byte identical. Generate default language first, record exact anchor IDs, reuse in other languages |
 | Images in header/footer don't switch on language change | Logos in `index.html` need `data-src-{lang}` attributes. `switchLanguage()` Step 3 swaps `src` |
 | Images in injected content use wrong paths | Each language's content HTML uses `media/{lang}/` paths. No `data-src-{lang}` needed for injected images |
 | Single-language page has empty containers (no content) | Single-language pages place content directly in `index.html`. Only multi-language uses JS injection |
