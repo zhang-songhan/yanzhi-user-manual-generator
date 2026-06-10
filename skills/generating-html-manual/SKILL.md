@@ -29,7 +29,7 @@ Convert a Markdown user manual into a self-contained, styled HTML page with side
 This skill generates a standalone single HTML webpage. **HTML code generation (Steps 3-4) MUST follow the superpowers TDD cycle:**
 
 1. **RED — Write failing tests first:** Before writing ANY HTML/CSS/JS code, write test assertions for each structure, style, and behavior. Tests must verify:
-   - Correct heading hierarchy and ID slugs (anchor IDs are lowercase English words with hyphen separators, e.g., `system-settings-export-path`; Chinese titles are translated to English for anchors)
+   - Correct heading hierarchy and ID slugs (anchor IDs are **always** lowercase English words with hyphen separators, regardless of content language; Chinese/Russian/Japanese/Korean/Arabic titles are translated to English for anchors; NEVER use pinyin or transliteration — e.g., `system-settings-export-path`, not `xi-tong-she-zhi`)
    - TOC link targets resolve to valid heading IDs
    - Sidebar toggle behavior — menu icon (☰) positioned left of the logo in the header toggles sidebar fold/unfold; sidebar defaults to visible (280px width), content area expands when sidebar is folded; toggle works at all screen sizes
    - Anchor scroll offset prevents fixed header from hiding targets
@@ -38,6 +38,20 @@ This skill generates a standalone single HTML webpage. **HTML code generation (S
    - Contrast rules (no dark text on dark backgrounds)
    - Media path correctness (all `src`/`href` point to files that exist in `media/`)
    - Print styles hide navigation chrome
+   - URL `?lang=` parameter correctly sets language on page load (priority: URL > localStorage > default)
+   - URL `?lang=` with unsupported language code falls through to localStorage, then default
+   - Combined `#anchor` + `?lang=` URL applies language first, then scrolls to anchor target with proper offset
+   - Anchor IDs never contain non-English characters (no pinyin, no Cyrillic, no Kanji, no Hangul, no Arabic script)
+   - Language switcher click updates URL `?lang=` parameter without full page reload (using `history.replaceState`)
+   - All body content is translated and wrapped in `.lang-content` blocks (one per language in `LANGS`)
+   - Heading `id` attributes are identical across all `.lang-content` blocks for the same heading
+   - Non-default `.lang-content` blocks have `style="display:none"` on page load
+   - `switchLanguage()` toggles `.lang-content` block visibility (shows matching lang, hides others)
+   - `switchLanguage()` swaps image `src` for UI chrome images using `data-src-{lang}` attributes (logos outside `.lang-content`)
+   - Images inside `.lang-content` blocks use `media/{lang}/` paths — no `data-src-{lang}` needed
+   - Default language images render at the correct paths on initial load
+   - Code blocks and Mermaid diagrams are duplicated per `.lang-content` block when they contain translatable text
+   - Single-language pages do NOT use `.lang-content` wrappers — output plain HTML body directly
 2. **GREEN — Write minimal code to pass:** Generate the HTML body, apply the template, wire up interactivity — one test at a time. Each increment of HTML/CSS/JS must correspond to a test that was already written and seen to fail.
 3. **REFACTOR — Improve while keeping tests green:** Deduplicate styles, optimize selectors, streamline event handlers, improve semantic markup. Never add new behavior during refactoring.
 
@@ -120,9 +134,25 @@ Supported language codes: `zh` (Simplified Chinese), `en` (English), `ru` (Russi
    - **Single-language:** Copy to `media/`
    - **Multi-language:** Copy to **ALL** language subfolders (e.g., `media/zh/`, `media/en/`, `media/ru/`)
 
-### Step 3: Convert Markdown to HTML
+### Step 3: Translate and Convert Markdown to HTML
 
-Convert the markdown content to well-structured HTML following these rules:
+**Multi-language: Translate first.** When `LANGS` has multiple languages, the source markdown must be translated into every target language BEFORE HTML conversion. The translation is done at the markdown level:
+
+1. Parse the original markdown into semantic blocks (headings, paragraphs, tables, callouts, code blocks, mermaid blocks, figures)
+2. For each target language (except the source/default language), translate the text content of each block:
+   - Headings: translate to the target language, but keep the English anchor `id` identical (anchors are always English — see Heading ID slugs rules)
+   - Paragraphs, table cells, callout text: translate fully
+   - Screenshot captions (`<figcaption>`): translate, keeping captions concise (≤10 chars after prefix)
+   - Image `alt` text: translate
+   - Code blocks: do NOT translate (code is language-neutral)
+   - Mermaid diagram node labels: translate if they contain human-readable text
+   - Do NOT translate: file paths, URLs, version strings, technical identifiers
+3. The source/default language version is used as-is (no translation needed)
+4. Each language version is independently converted to HTML following the rules below, then wrapped in `<div class="lang-content" data-lang-content="XX">` blocks as described in [Multi-Language Content Structure](#multi-language-content-structure-lang-content-blocks)
+
+**Single-language:** Skip translation. Convert the markdown directly to HTML following the rules below. Do NOT wrap content in `.lang-content` blocks — output plain HTML body content directly.
+
+**HTML conversion rules (apply per-language for multi-lang, once for single-lang):**
 
 | Markdown | HTML Output |
 |----------|------------|
@@ -156,19 +186,22 @@ message: feat: ...
 
 **Skip screenshot index table:** If the markdown ends with a screenshot index table (a section titled "截图索引"、"截图索引表"、"Screenshot Index" or similar, containing a table that maps screenshot placeholders to file paths), **omit this entire section from the HTML output**. This table is a build-time reference for tracking which screenshots exist — it is not end-user content and does not belong in the published manual.
 
-**Heading ID slugs (锚点名称格式):** Generate anchor IDs as **lowercase English words separated by short dashes** (`-`). Chinese titles must be translated to English for anchor generation. Different levels of headings are also separated by short dashes.
+**Heading ID slugs (锚点名称格式 — CRITICAL, LANGUAGE-INDEPENDENT):** Generate anchor IDs as **lowercase English words separated by short dashes** (`-`), **regardless of the content language**. This is a hard rule: ALL heading text — whether in Chinese, Russian, Japanese, Korean, French, German, Spanish, Portuguese, Arabic, or any other language — must be **translated to English meaning** for anchor ID generation. Different levels of headings are also separated by short dashes.
 
+- **NEVER use pinyin** — Chinese headings must be translated to actual English words (e.g., "系统设置" → `system-settings`, NOT `xi-tong-she-zhi`)
+- **NEVER use transliteration** — Russian/Japanese/Korean/Arabic headings must be translated to English meaning (e.g., "Настройки" → `settings`, NOT `nastroiki`; "設定" → `settings`, NOT `settei`)
 - **`h2` headings**: Translate the heading text to lowercase English, using hyphens between words. Examples: `login-page`, `faq`, `system-settings`, `user-management`
 - **`h3` headings**: Use `parent-heading-current-heading` format (parent h2's English anchor - current h3's English text), all lowercase with hyphens. Examples: `system-settings-export-path`, `user-management-role-permissions`, `data-reports-access-logs`
 - **`h4+` headings**: Continue chaining: `parent-grandparent-current-heading` format (e.g., `system-settings-security-password-policy`)
 - **Do NOT include heading numbers** (like `1.1`, `2.3.1`, `01_`, `1、`, etc.) in anchor names — strip them entirely
-- **Do NOT keep Chinese characters** in anchors — translate/transliterate to English first, then convert to lowercase hyphenated form
+- **Do NOT keep any non-English characters** in anchors — translate to English first, then convert to lowercase hyphenated form
 - Replace spaces with hyphens; remove punctuation marks (colons `:`、`：`, brackets `（）`, quotation marks `""`、`「」`, periods `。`, commas `，`、`,`, slashes `/`)
 - Ensure uniqueness by appending `-2`, `-3` etc. for duplicates
 
 **Media path rewrite:** All media references in the HTML must use relative paths:
 - **Single-language:** `media/{filename}`
-- **Multi-language:** `media/{DEFAULT_LANG}/{filename}` (where `{DEFAULT_LANG}` is the first language code in `LANGS`)
+- **Multi-language (inside `.lang-content` blocks):** Each language block uses its own path — `media/zh/{filename}` in the `zh` block, `media/en/{filename}` in the `en` block, etc.
+- **Multi-language (outside `.lang-content`, e.g., header/footer logos):** Default to `media/{DEFAULT_LANG}/{filename}` and add `data-src-{lang}` attributes for language switching
 
 **Screenshot image sizing:** All screenshot images (`<img>` inside `<figure>`) must use a fixed height with wide aspect ratio (5:8 = height:width, matching 1200×1920px source screenshots): `height: 450px; object-fit: contain; object-position: center; max-width: 720px; width: 100%`. The `height: 450px` ensures the browser reserves exactly 450px of vertical space **before** images load, preventing anchor scroll positions from drifting when lazy-loaded images arrive. The `max-width: 720px` matches the 5:8 ratio (450 × 8/5 = 720), giving screenshots a landscape/widescreen display. The `object-fit: contain` preserves aspect ratio without distortion. **Also add explicit `width` and `height` HTML attributes** to each `<img>` tag (obtain actual pixel dimensions via `sips` or similar tool) so the browser can compute the intrinsic aspect ratio even before CSS is applied.
 
@@ -295,7 +328,7 @@ Build the sidebar TOC from parsed headings:
 - Include only `h2` and `h3` headings in the TOC
 - Skip `h1` (it's the title in the header) and `h4+` (too deep for sidebar)
 - Use `.toc-h2` class for `##` headings, `.toc-h3` class for `###` headings
-- Generate anchor IDs: lowercase English words with hyphen separators, with heading levels chained by hyphens. Chinese titles must be translated to English first (e.g., "系统设置 > 导出路径" → `system-settings-export-path`). See Heading ID slugs in Step 3 for full rules.
+- Generate anchor IDs: lowercase English words with hyphen separators, with heading levels chained by hyphens. ALL heading text must be translated to English first, regardless of content language (Chinese → English, Russian → English, Japanese → English, etc.). Never use pinyin or transliteration (e.g., "系统设置 > 导出路径" → `system-settings-export-path`). See Heading ID slugs in Step 3 for full rules.
 - Each TOC item is an `<li>` containing an `<a>` linking to the heading's `id`
 
 ## Callout Conversion
@@ -357,17 +390,21 @@ graph TD
 **Image references:**
 1. Find all `![alt](path)` in the markdown
 2. Resolve relative paths from the markdown file's location
-3. Copy each image to `{output}/media/{filename}`
+3. Copy each image to the appropriate media directories:
+   - **Single-language:** `{output}/media/{filename}`
+   - **Multi-language:** `{output}/media/{lang}/{filename}` for each language in `LANGS`
 4. Rewrite the `<img src>` in HTML:
    - **Single-language:** `media/{filename}`
-   - **Multi-language:** `media/{DEFAULT_LANG}/{filename}` where `{DEFAULT_LANG}` is the first language in `LANGS`
+   - **Multi-language (inside `.lang-content` blocks):** `media/{lang}/{filename}` — each language block uses its own path
+   - **Multi-language (header/footer logos):** `media/{DEFAULT_LANG}/{filename}` + `data-src-{lang}` attributes for runtime switching
 
 **Non-image files (PDFs, docs):**
 
-1. Same copy-to-media process
+1. Same copy-to-media process (copy to all language subfolders for multi-language)
 2. Rewrite link `href`:
    - **Single-language:** `media/{filename}`
-   - **Multi-language:** `media/{DEFAULT_LANG}/{filename}`
+   - **Multi-language (inside `.lang-content` blocks):** `media/{lang}/{filename}` per language
+   - **Multi-language (outside `.lang-content`):** `media/{DEFAULT_LANG}/{filename}` + `data-href-{lang}` attributes
 
 **Company logos:**
 - Always copy all files from `company_style/` to the `media/` directory:
@@ -403,7 +440,35 @@ When multi-language is active, add a language switcher in the **top-right corner
 - **On page load:** Read `localStorage` for saved preference; fall back to the first language in `LANGS` (the default).
 - **Style notes:** Buttons should be compact (`font-size: 0.75rem; padding: 2px 6px; border-radius: 3px`), with a subtle border (`1px solid var(--neutral-200)`). Active button gets `background: var(--accent-700); color: #fff; border-color: var(--accent-700)`.
 
-### data-i18n Attributes
+### URL Language Parameter (`?lang=`)
+
+The HTML page must support a `?lang=` URL query parameter to set the display language on page load. This allows linking directly to a specific language version (e.g., `manual.html?lang=en`).
+
+**Priority (highest to lowest) on page load:**
+
+1. **URL `?lang=` parameter** — highest priority; overrides everything else
+2. **`localStorage` saved preference** (`manual-lang` key) — used when no URL param
+3. **Default language** (first language in `LANGS`) — final fallback
+
+**Behavior:**
+- `?lang=zh` → display Chinese version (UI chrome + content blocks + images)
+- `?lang=en` → display English version
+- `?lang=ru` → display Russian version
+- Unsupported/invalid language code → fall through to localStorage, then default
+- No `?lang=` parameter → use localStorage, then default
+
+**Combined `#` anchor + `?lang=` parameter:**
+
+When the URL contains both a hash anchor and a language parameter (e.g., `manual.html?lang=zh#system-settings-export-path`), the page must:
+
+1. **Apply language first** — read `?lang=` and call `switchLanguage()` to show the correct `.lang-content` block + UI chrome
+2. **Then scroll to anchor** — after language is applied and the target `.lang-content` block is visible, scroll the target heading into view with proper offset (64px header + 16px padding = 80px)
+3. Use double `requestAnimationFrame` to defer anchor scrolling until after the `.lang-content` block visibility change renders
+4. If the anchor target doesn't exist (not in any `.lang-content` block or wrong page), silently do nothing
+
+The implementation is in the `DOMContentLoaded` handler in [Language Switching Implementation](#language-switching-implementation) below — it reads `getUrlLang()`, prioritizes URL > localStorage > default, then defers anchor scrolling with double `requestAnimationFrame`.
+	
+	### data-i18n Attributes
 
 All localizable UI chrome text must use `data-i18n` attributes. Each translatable element gets a unique key:
 
@@ -454,44 +519,150 @@ const I18N = {
 function switchLanguage(lang) {
   if (!I18N[lang]) return;
   document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang;
+
+  // 1. Switch UI chrome text (data-i18n)
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');
     if (I18N[lang] && I18N[lang][key]) {
       el.textContent = I18N[lang][key];
     }
   });
+
+  // 2. Switch content blocks visibility (.lang-content)
+  document.querySelectorAll('.lang-content').forEach(el => {
+    el.style.display = el.dataset.langContent === lang ? '' : 'none';
+  });
+
+  // 3. Switch image src for images outside .lang-content blocks (header/footer logos)
+  document.querySelectorAll('img[data-src-zh]').forEach(img => {
+    const newSrc = img.getAttribute('data-src-' + lang);
+    if (newSrc) img.src = newSrc;
+  });
+
   localStorage.setItem('manual-lang', lang);
+  // Update URL ?lang= parameter without full page reload
+  const url = new URL(window.location);
+  url.searchParams.set('lang', lang);
+  window.history.replaceState({}, '', url);
   // Update switcher button active states
   document.querySelectorAll('.lang-switch-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.lang === lang);
   });
 }
 
-// On page load: restore preference
+// Read lang from URL query string
+function getUrlLang() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('lang');
+}
+
+// On page load: determine language with priority: URL param > localStorage > default
+// Also handle combined #anchor + ?lang= scenario (apply language first, then scroll)
 document.addEventListener('DOMContentLoaded', () => {
+  const urlLang = getUrlLang();
   const saved = localStorage.getItem('manual-lang');
   const defaultLang = '{{DEFAULT_LANG}}'; // first language in LANGS
-  switchLanguage(saved && I18N[saved] ? saved : defaultLang);
+
+  const lang = (urlLang && I18N[urlLang]) ? urlLang
+    : (saved && I18N[saved]) ? saved
+    : defaultLang;
+
+  switchLanguage(lang);
+
+  // Handle anchor scroll AFTER language is applied (for combined ?lang=X#anchor URLs)
+  if (window.location.hash) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const target = document.querySelector(window.location.hash);
+        if (target) {
+          const headerHeight = 64;
+          const padding = 16;
+          const position = target.getBoundingClientRect().top + window.pageYOffset - headerHeight - padding;
+          window.scrollTo({ top: position, behavior: 'smooth' });
+        }
+      });
+    });
+  }
 });
 ```
 
 Replace `{{DEFAULT_LANG}}` with the first language code from `LANGS` during HTML generation.
 
-### Content Language (Markdown Body)
+**Image src switching for UI chrome images:** Images outside `.lang-content` blocks (header logo, footer logo) must use `data-src-{lang}` attributes so they switch when the language changes:
 
-The markdown content itself (headings, paragraphs, etc.) is in the source language and is **NOT translated automatically** by the i18n system. The i18n system handles only the **UI chrome**:
+```html
+<!-- Header logo with language-specific src switching -->
+<img src="media/zh/wisquest_horizontal_logo.png"
+     data-src-zh="media/zh/wisquest_horizontal_logo.png"
+     data-src-en="media/en/wisquest_horizontal_logo.png"
+     data-src-ru="media/ru/wisquest_horizontal_logo.png"
+     alt="Logo" class="header-logo">
+```
 
-| Element | i18n? | Notes |
-|---------|-------|-------|
+Images inside `.lang-content` blocks do NOT need `data-src-{lang}` — they already have language-specific `src` paths and the block visibility toggle handles them.
+
+### Content Translation (Markdown Body)
+
+**ALL markdown content must be translated into every target language.** The source markdown (usually Chinese) is translated during HTML generation (Step 3), and the output HTML contains ALL language versions of the content. The i18n system handles BOTH **UI chrome** and **body content visibility**.
+
+| Element | i18n? | Mechanism |
+|---------|-------|-----------|
 | Header title | ✅ Yes | `data-i18n` |
 | TOC heading ("目录") | ✅ Yes | `data-i18n` |
 | Back-to-top button | ✅ Yes | `data-i18n` |
 | Footer copyright | ✅ Yes | `data-i18n` |
 | Language switcher labels | ✅ Yes | `data-i18n` |
 | Sidebar toggle aria-label | ✅ Yes | `data-i18n` |
-| Body content (headings, paragraphs) | ❌ No | Original markdown language |
-| Screenshot captions | ❌ No | Original markdown language |
-| Table headers | ❌ No | Original markdown language |
+| Body content (headings, paragraphs, tables, captions) | ✅ Yes | `.lang-content` blocks — translated in Step 3 |
+| Screenshot captions | ✅ Yes | Translated inside `.lang-content` blocks |
+| Table headers | ✅ Yes | Translated inside `.lang-content` blocks |
+| Images (`<img src>`) | ✅ Yes | Each `.lang-content` block has its own images with `media/{lang}/` paths |
+
+### Multi-Language Content Structure (`.lang-content` Blocks)
+
+When `LANGS` has multiple languages, the HTML body content must contain **ALL language versions** of the translated markdown. Each language's content is wrapped in a container with the `.lang-content` class and a `data-lang-content` attribute:
+
+```html
+<!-- Chinese content (default language, visible on load) -->
+<div class="lang-content" data-lang-content="zh">
+  <h2 id="system-settings">系统设置</h2>
+  <p>这是系统设置页面的详细说明...</p>
+  <figure>
+    <img src="media/zh/1-settings.png" alt="系统设置" height="1920" width="1200">
+    <figcaption>图1：系统设置</figcaption>
+  </figure>
+</div>
+
+<!-- English content (hidden initially) -->
+<div class="lang-content" data-lang-content="en" style="display:none">
+  <h2 id="system-settings">System Settings</h2>
+  <p>This is a detailed description of the system settings page...</p>
+  <figure>
+    <img src="media/en/1-settings.png" alt="System Settings" height="1920" width="1200">
+    <figcaption>Figure 1: System Settings</figcaption>
+  </figure>
+</div>
+
+<!-- Russian content (hidden initially) -->
+<div class="lang-content" data-lang-content="ru" style="display:none">
+  <h2 id="system-settings">Настройки системы</h2>
+  <p>Это подробное описание страницы настроек системы...</p>
+  <figure>
+    <img src="media/ru/1-settings.png" alt="Настройки системы" height="1920" width="1200">
+    <figcaption>Рисунок 1: Настройки системы</figcaption>
+  </figure>
+</div>
+```
+
+**Key rules for `.lang-content` blocks:**
+
+1. **Each language gets its own content block** — ALL body content (headings, paragraphs, tables, callouts, figures, images) is duplicated for each target language, wrapped in `<div class="lang-content" data-lang-content="XX">`.
+2. **Default language block is visible** — all other language blocks have `style="display:none"`.
+3. **Heading `id` attributes are identical across language blocks** — since only one block is visible at a time, duplicate IDs don't cause conflicts. Anchor links always resolve to the visible heading.
+4. **Images use language-specific paths** — each block's `<img src>` points to `media/{lang}/filename`. No JS image src swapping needed — showing/hiding the container handles it.
+5. **Mermaid diagrams are duplicated per language** — each `.lang-content` block has its own `<pre class="mermaid">` with translated node labels if the diagram contains text.
+6. **Sidebar TOC links point to the correct heading IDs** — since IDs are identical across language blocks, TOC links work for all languages.
+7. **All HTML structure rules from Step 3 apply per language** — headings, callouts, tables, figures, captions are all regenerated for each translated version.
 
 ### Company Name Rules
 
@@ -590,6 +761,11 @@ The markdown content itself (headings, paragraphs, etc.) is in the source langua
 | Anchor IDs contain heading numbers (e.g., `1.1-login`, `01_faq`) | Remove all heading numbers — anchors use clean lowercase English text only, e.g., `login`, `faq` |
 | Anchor IDs use Chinese characters (e.g., `系统登录-登录系统`) | Translate Chinese headings to English for anchor IDs: use lowercase English words with hyphen separators, e.g., `system-login-login-system` |
 | Anchor IDs use pinyin (e.g., `xi-tong-deng-lu`) | Translate Chinese headings to actual English words, not pinyin — e.g., `system-login` not `xi-tong-deng-lu` |
+| Anchor IDs use transliteration for non-Chinese languages (e.g., `nastroiki` for Russian "Настройки", `settei` for Japanese "設定") | ALL headings in ANY language must be translated to English meaning — use `settings`, not transliteration. The anchor ID format is always lowercase English words with hyphen separators, regardless of the content language |
+| Anchor IDs contain non-English script characters (Cyrillic, Kanji, Hangul, Arabic, etc.) | Translate ALL heading text to English for anchor IDs — Russian "Настройки системы" → `system-settings`, Japanese "設定" → `settings`, Korean "설정" → `settings`, Arabic "إعدادات" → `settings` |
+| URL `?lang=` parameter not supported | Implement `getUrlLang()` using `URLSearchParams`. On page load, check URL param with priority: URL `?lang=` > localStorage > default language |
+| Combined `#anchor` + `?lang=` URL not handled correctly | When URL has both `?lang=zh#some-anchor`, apply language FIRST via `switchLanguage()`, then scroll to anchor via `requestAnimationFrame` (double frame to ensure DOM is stable). Wrong order (scroll before language) causes anchor to miss target |
+| Anchor scroll on combined `?lang=` + `#` fires before i18n DOM updates complete | Use nested `requestAnimationFrame` to defer anchor scrolling until after language switch re-renders all `data-i18n` elements. Single frame may fire before DOM updates paint |
 | Language selection not asked before HTML generation | Step 0 is MANDATORY — always ask the user for language preferences before any other work |
 | i18n not implemented when `LANGS` has multiple languages | When `LANGS` contains a comma, implement full `data-i18n` + language switcher + translation map |
 | Language switcher missing or in wrong position | Language switcher must be in the **top-right corner of the header**, to the right of the version string |
@@ -604,3 +780,12 @@ The markdown content itself (headings, paragraphs, etc.) is in the source langua
 | Screenshots not copied to all language subfolders in multi-lang mode | Every screenshot must be copied to ALL language media subfolders (e.g., `media/zh/`, `media/en/`, `media/ru/`) |
 | Media `src` paths don't include language prefix in multi-lang mode | Use `media/{DEFAULT_LANG}/{filename}` for all image/link paths when multi-language |
 | Logos only copied to default language folder in multi-lang mode | Copy logos to ALL language subfolders — each language needs its own complete media set |
+| Markdown content not translated into all target languages | Translate the full markdown body into each language in `LANGS` during Step 3. Each language gets its own `.lang-content` block |
+| Body content uses `data-i18n` instead of `.lang-content` blocks | Full body content goes in `<div class="lang-content" data-lang-content="XX">` blocks (one per language). `data-i18n` is only for UI chrome text (short labels, buttons) |
+| `.lang-content` blocks not wrapped around translated content | ALL body content (headings, paragraphs, tables, figures, images, captions) must be inside `.lang-content` blocks for multi-language pages |
+| Heading `id` attributes differ between language blocks | Keep `id` identical across all `.lang-content` blocks for the same heading — anchors must resolve correctly regardless of active language |
+| Images in header/footer don't switch on language change | Images outside `.lang-content` blocks (logos) need `data-src-{lang}` attributes. The `switchLanguage()` function swaps `src` based on these |
+| Image `src` not updated in `switchLanguage()` for UI chrome | Step 3 of `switchLanguage()` handles `img[data-src-zh]` — ensure logo images have these data attributes |
+| Mermaid diagrams not duplicated per language | Each `.lang-content` block needs its own `<pre class="mermaid">` if diagram labels contain human-readable text. Translate node labels per language |
+| Single-language page has `.lang-content` wrappers | Only multi-language pages use `.lang-content` blocks. Single-language pages output plain HTML body content directly |
+| Content visibility not toggled on language switch | Step 2 of `switchLanguage()` must show/hide `.lang-content` blocks based on `data-lang-content` matching the target language |
