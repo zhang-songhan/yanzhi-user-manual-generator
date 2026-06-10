@@ -53,6 +53,8 @@ This skill generates an HTML page with external CSS/JS/i18n files. Content text 
    - `scripts/main.js` initializes `const I18N = {};` and `const I18N_CONTENT = {};` before any i18n files
    - Sidebar toggle button has NO `data-i18n` attribute and NO translatable text (pure icon)
    - Back-to-top button has NO `data-i18n` attribute and NO translatable text (pure icon)
+   - All UI chrome text has `data-i18n` with translations (header-title, toc-title, footer-copyright, lang-switcher-label)
+   - Header title bar text switches on language change — `<span data-i18n="header-title">` in the header with translations in every `i18n/{lang}.js` file
    - No `fold-sidebar`, `expand-sidebar`, or `back-to-top` keys exist in any i18n file
    - Single-language pages output content directly in `index.html` — no JS injection needed
 2. **GREEN — Write minimal code to pass:** Generate the HTML body, create external CSS/JS/i18n files, wire up interactivity — one test at a time. Each increment of HTML/CSS/JS must correspond to a test that was already written and seen to fail.
@@ -262,7 +264,7 @@ All external files are referenced from `index.html` using relative paths (e.g., 
 
 #### Page Structure
 
-- **Header** — fixed top bar with menu toggle icon (☰) on the far left, followed by company logo, page title, and version string. The menu icon toggles the sidebar fold/unfold. When multi-language is active (`LANGS` has >1 item), a **language switcher widget** sits in the **top-right corner** of the header (to the right of the version string).
+- **Header** — fixed top bar with menu toggle icon (☰) on the far left, followed by company logo, page title (`<span data-i18n="header-title">`), and version string. The menu icon toggles the sidebar fold/unfold. The page title text is translated via `data-i18n` — each language file provides its own `header-title` value. When multi-language is active (`LANGS` has >1 item), a **language switcher widget** sits in the **top-right corner** of the header.
 - **Sidebar** — fixed left navigation. Defaults to visible (280px width). Contains a `<div id="toc-container">` populated by JS with the current language's TOC HTML. When folded, the content area expands.
 - **Content** — main body area with max-width 900px, centered. Contains a `<div id="content-container">` populated by JS with the current language's body HTML. Has `margin-left: 280px` when sidebar is visible.
 - **Footer** — company logo and copyright
@@ -287,7 +289,7 @@ All external files are referenced from `index.html` using relative paths (e.g., 
 | Element | Spec |
 |---------|------|
 | Header height | 64px, fixed top, `z-index: 1000`. Contains menu toggle **icon button** (☰, no text) on the far left, then logo, title, version. The icon button uses only the ☰ Unicode character (or equivalent SVG icon) with no visible text label — it is a pure icon. When multi-language: language switcher buttons at the far right. |
-| Sidebar width | 280px, fixed left, `z-index: 900`. Defaults to visible. Toggled by the header menu icon. Use CSS `transition` on `transform` or `margin-left` for smooth fold/unfold animation. |
+| Sidebar width | 280px, fixed left, `z-index: 900`. Defaults to visible. Toggled by the header menu icon. TOC list items MUST have `list-style: none` (no bullet points). Use CSS `transition` on `transform` or `margin-left` for smooth fold/unfold animation. |
 | Content max-width | 900px, centered. Content area has `margin-left: 280px` when sidebar is visible; transitions to `margin-left: 0` (or auto-centered) when sidebar is folded. |
 | Anchor scroll offset | CSS: `scroll-margin-top: 80px` on all `h2`/`h3`. JS: intercept TOC link clicks, call `scrollIntoView()` with manual offset for the 64px header + 16px breathing room |
 | Back-to-top trigger | Scroll > 400px |
@@ -354,6 +356,12 @@ Build the sidebar TOC from parsed headings:
 - Use `.toc-h2` class for `##` headings, `.toc-h3` class for `###` headings
 - Generate anchor IDs: lowercase English words with hyphen separators, chain heading levels with hyphens. ALL heading text must be translated to English first. Never use pinyin or transliteration. See Heading ID slugs in Step 3 for full rules.
 - Each TOC item is an `<li>` containing an `<a>` linking to the heading's `id`
+- **CRITICAL — TOC must NOT show bullet points.** Add these CSS rules in `style/main.css`:
+  ```css
+  .toc-list { list-style: none; padding-left: 0; margin: 0; }
+  .toc-list li { list-style: none; }
+  ```
+  Nested `<ul>` elements (for `h3` sub-items) also must not show bullets — the `.toc-list li` rule covers them via inheritance, but add `.toc-list ul { list-style: none; padding-left: 16px; }` for safe measure.
 
 **Multi-language TOC:** Generate a separate TOC HTML string for each language. Each language's TOC uses identical anchor IDs but translated heading text. Save each TOC string as `I18N_CONTENT['{lang}'].toc` in the content file. At runtime, `switchLanguage()` injects the correct TOC HTML into `#toc-container`.
 
@@ -411,32 +419,47 @@ graph TD
    ```
 4. Initialize Mermaid. The approach depends on single-language vs multi-language:
 
-   **Single-language** (content is in `index.html`, all diagrams visible on load):
+   **CRITICAL — Mermaid.js CDN must load BEFORE `scripts/main.js`.** In `index.html` `<head>`:
    ```html
-   <script>
+   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+   <script src="scripts/main.js"></script>
+   ```
+   The CDN script is synchronous — `mermaid` global is available when `scripts/main.js` runs.
+
+   **Single-language** (content is inline in `index.html`):
+   ```javascript
+   // In scripts/main.js:
    mermaid.initialize({ startOnLoad: true, theme: 'default' });
-   </script>
+   // startOnLoad: true auto-renders all pre.mermaid elements on DOMContentLoaded
    ```
 
    **Multi-language** (content injected by JS at runtime):
-   - Mermaid is initialized with `startOnLoad: false` (no `<pre class="mermaid">` elements exist in `index.html` at load time)
-   - After `switchLanguage()` injects content HTML into `#content-container`, call `mermaid.run()` to render any `<pre class="mermaid">` elements in the newly injected content
-   - Since injected content is in a visible container (no `display:none`), Mermaid can measure dimensions correctly — no workaround needed
-   - Place Mermaid init in `scripts/main.js` alongside other init logic:
+   - `mermaid.initialize({ startOnLoad: false })` — no `<pre class="mermaid">` exists in `index.html` at load time
+   - After `switchLanguage()` injects content HTML via `innerHTML`, call `mermaid.run()` on ALL `<pre class="mermaid">` elements in the newly injected content
+   - Mermaid internally tracks which elements have been processed — calling `mermaid.run()` on already-rendered elements is safe (no-ops)
+   - Since injected content is in a visible container, Mermaid measures correct dimensions — no `display:none` workaround needed
+   - **Multi-language mermaid labels:** Each language's content file (`i18n/content-{lang}.js`) contains its own `<pre class="mermaid">` with **translated node labels** in the Mermaid DSL. When `switchLanguage()` replaces content and calls `mermaid.run()`, the new language's diagram renders with translated text.
 
    ```javascript
-   // In scripts/main.js, after DOMContentLoaded:
+   // In scripts/main.js:
    mermaid.initialize({ startOnLoad: false, theme: 'default' });
 
    async function renderMermaidInContent() {
      const container = document.getElementById('content-container');
      if (!container) return;
+     // Query ALL pre.mermaid — mermaid.run() internally skips already-processed ones
      const elements = container.querySelectorAll('pre.mermaid');
      if (elements.length > 0) {
        await mermaid.run({ nodes: Array.from(elements) });
      }
    }
    ```
+
+   **Common Mermaid rendering failures and fixes:**
+   - **Mermaid CDN loaded AFTER main.js** → Mermaid global undefined at init time. Fix: `<script src="CDN">` BEFORE `<script src="scripts/main.js">` in `<head>`
+   - **`mermaid.run()` called before `innerHTML` DOM is ready** → elements exist but not yet laid out. Fix: call `mermaid.run()` synchronously after `innerHTML` — no `requestAnimationFrame` needed since `mermaid.run()` is async and awaits internal rendering
+   - **Mermaid syntax errors in translated DSL** → non-English characters in node labels must use quotes: `A["中文标签"]`. Unquoted non-ASCII text causes parse failures
+   - **Mermaid DSL contains special characters** → wrap labels in double quotes: `A["标签：设置"]`. Colons, parentheses, brackets in unquoted labels break the parser
 
 ### Styling
 
@@ -539,6 +562,7 @@ The implementation is in the `DOMContentLoaded` handler in [Language Switching I
 All localizable UI chrome text must use `data-i18n` attributes. Each translatable element gets a unique key:
 
 ```html
+<span data-i18n="header-title">用户使用手册</span>
 <span data-i18n="toc-title">目录</span>
 <p data-i18n="footer-copyright">© 2026 研知教育科技 版权所有</p>
 ```
@@ -554,6 +578,7 @@ Translation text for UI chrome (data-i18n elements) is stored in **separate Java
 **`i18n/zh.js`** (Chinese):
 ```javascript
 I18N['zh'] = {
+  'header-title': '用户使用手册',
   'toc-title': '目录',
   'footer-copyright': '© 2026 研知教育科技 版权所有',
   'lang-switcher-label': '语言'
@@ -563,6 +588,7 @@ I18N['zh'] = {
 **`i18n/en.js`** (English):
 ```javascript
 I18N['en'] = {
+  'header-title': 'User Manual',
   'toc-title': 'Contents',
   'footer-copyright': '© 2026 WisQuest EdTech. All rights reserved.',
   'lang-switcher-label': 'Language'
@@ -572,6 +598,7 @@ I18N['en'] = {
 **`i18n/ru.js`** (Russian):
 ```javascript
 I18N['ru'] = {
+  'header-title': 'Руководство пользователя',
   'toc-title': 'Содержание',
   'footer-copyright': '© 2026 WisQuest EdTech. Все права защищены.',
   'lang-switcher-label': 'Язык'
@@ -635,7 +662,7 @@ mermaid.initialize({ startOnLoad: false, theme: 'default' });
 async function renderMermaidInContent() {
   const container = document.getElementById('content-container');
   if (!container) return;
-  const elements = container.querySelectorAll('pre.mermaid:not([data-processed])');
+  const elements = container.querySelectorAll('pre.mermaid');
   if (elements.length > 0) {
     await mermaid.run({ nodes: Array.from(elements) });
   }
@@ -783,8 +810,8 @@ Images in injected content HTML use `media/{lang}/` paths directly — no `data-
 
 | Element | i18n? | Mechanism |
 |---------|-------|-----------|
-| Header title | ✅ Yes | `data-i18n` |
-| TOC heading ("目录") | ✅ Yes | `data-i18n` |
+| Header title ("用户使用手册") | ✅ Yes | `data-i18n="header-title"` in the header bar `<span>` |
+| TOC heading ("目录") | ✅ Yes | `data-i18n="toc-title"` |
 | Back-to-top button | ❌ No | Pure icon (↑), no text |
 | Footer copyright | ✅ Yes | `data-i18n` |
 | Language switcher labels | ✅ Yes | `data-i18n` |
@@ -946,6 +973,12 @@ When `LANGS` has multiple languages, ALL content text is stored in external JS f
 | Sidebar TOC items hardcoded in `index.html` (multi-lang) | Multi-language TOC is injected via `I18N_CONTENT[lang].toc` into `#toc-container`. `index.html` TOC container starts empty |
 | Sidebar TOC text doesn't change on language switch | Ensure `switchLanguage()` injects `I18N_CONTENT[lang].toc` into `#toc-container` and re-binds `initTocLinks()` |
 | `.lang-content` blocks used in `index.html` | NO `.lang-content` blocks anywhere. Content is injected by JS — `index.html` has only empty container divs |
+| Mermaid rendered as raw code (not SVG diagram) | Check: (1) CDN `<script>` loaded BEFORE `scripts/main.js`, (2) `mermaid.initialize()` called before `mermaid.run()`, (3) `mermaid.run()` called AFTER `innerHTML` injection, (4) Mermaid DSL node labels with non-ASCII characters are wrapped in quotes: `A["中文"]` |
+| Mermaid diagram text not translated after language switch | Each `i18n/content-{lang}.js` must contain its own `<pre class="mermaid">` with translated node labels. `switchLanguage()` replaces content + calls `mermaid.run()` to render the new language's diagram |
+| Mermaid DSL parse error with special characters | Wrap ALL node labels in double quotes: `A["标签：设置"]`. Unquoted labels containing `:`, `(`, `)`, `[`, `]`, or non-ASCII text cause Mermaid parser failures |
+| Header title doesn't change on language switch | Header title `<span>` must have `data-i18n="header-title"`. Every `i18n/{lang}.js` must include `'header-title'` translation |
+| `header-title` key missing from i18n files | Add `'header-title': '...'` to every `i18n/{lang}.js` file. The value is the translated page title (e.g., `用户使用手册`, `User Manual`, `Руководство пользователя`) |
+| TOC items show bullet points (小圆点) | Add CSS: `.toc-list { list-style: none; padding-left: 0; }` and `.toc-list li { list-style: none; }`. Also `.toc-list ul { list-style: none; }` for nested sub-items |
 | I18N inline object instead of external i18n files | Multi-language pages MUST use external i18n files (`i18n/{lang}.js`), not an inline `I18N` object. Each language gets its own file |
 | i18n directory missing for multi-language page | Create `i18n/` directory with one `.js` file per language in `LANGS`. Skip `i18n/` for single-language pages |
 | i18n files loaded in wrong order | `index.html` loads `scripts/main.js` first (initializes `I18N = {}`), then all `i18n/*.js` files (populate I18N). The `DOMContentLoaded` handler in `scripts/main.js` runs after all files are loaded. Do NOT use an inline `<script>` block in `index.html` |
