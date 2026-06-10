@@ -33,7 +33,7 @@ This skill generates an HTML webpage with external CSS/JS/i18n files. **HTML cod
    - TOC link targets resolve to valid heading IDs
    - Sidebar toggle is a **pure icon button** (☰, no visible text) positioned left of the logo in the header; clicking toggles sidebar fold/unfold; sidebar defaults to visible (280px width), content area expands when sidebar is folded; toggle works at all screen sizes; icon does NOT change between states
    - Anchor scroll offset prevents fixed header from hiding targets
-   - Back-to-top button visibility (hidden at top, visible after scroll > 400px)
+   - Back-to-top button is a **pure icon** (↑ or ▲, no visible text), fixed bottom-right; visibility hidden at top, visible after scroll > 400px
    - Sidebar toggle works correctly at all screen sizes (icon button always visible, fold/unfold animation smooth, content area reflows correctly)
    - Contrast rules (no dark text on dark backgrounds)
    - Media path correctness (all `src`/`href` point to files that exist in `media/`)
@@ -53,12 +53,20 @@ This skill generates an HTML webpage with external CSS/JS/i18n files. **HTML cod
    - Images inside `.lang-content` blocks use `media/{lang}/` paths — no `data-src-{lang}` needed
    - Default language images render at the correct paths on initial load
    - Code blocks and Mermaid diagrams are duplicated per `.lang-content` block when they contain translatable text
+   - Mermaid diagrams render correctly in ALL language blocks (not just the default language) — `initMermaid()` temporarily unhides all `.lang-content` blocks before calling `mermaid.run()`, then restores visibility
+   - `scripts/mermaid-init.js` is loaded before `scripts/main.js`
+   - `mermaid.initialize()` uses `startOnLoad: false` for multi-language pages (NOT `startOnLoad: true`)
+   - All non-default language Mermaid diagrams render with correct dimensions (not empty SVGs or 0×0 placeholders)
    - Single-language pages do NOT use `.lang-content` wrappers — output plain HTML body directly
    - Multi-language pages have one i18n file per language in `i18n/` directory (e.g., `i18n/zh.js`, `i18n/en.js`, `i18n/ru.js`)
-   - Each i18n file defines `I18N['{lang}']` with all UI chrome translation keys (toc-title, back-to-top, footer-copyright, lang-switcher-label)
+   - Each i18n file defines `I18N['{lang}']` with all UI chrome translation keys (toc-title, footer-copyright, lang-switcher-label)
    - `scripts/main.js` initializes `const I18N = {};` before any i18n files are loaded
    - Sidebar toggle button has NO `data-i18n` attribute and NO translatable text (pure icon)
-   - No `fold-sidebar` or `expand-sidebar` keys exist in any i18n file
+   - Back-to-top button has NO `data-i18n` attribute and NO translatable text (pure icon ↑)
+   - No `fold-sidebar` or `expand-sidebar` or `back-to-top` keys exist in any i18n file
+   - Sidebar TOC items are inside `.lang-content` wrappers (one per language) — `switchLanguage()` toggles them along with content blocks
+   - Sidebar TOC heading `id` attributes are identical across all language TOC blocks (same IDs as content headings)
+   - Sidebar TOC items show correct language text after `switchLanguage()` (not stuck in default language)
 2. **GREEN — Write minimal code to pass:** Generate the HTML body, create external CSS/JS/i18n files, wire up interactivity — one test at a time. Each increment of HTML/CSS/JS must correspond to a test that was already written and seen to fail.
 3. **REFACTOR — Improve while keeping tests green:** Deduplicate styles, optimize selectors, streamline event handlers, improve semantic markup. Never add new behavior during refactoring.
 
@@ -255,7 +263,7 @@ Rationale: Screenshots and diagrams are informational content, not decorative el
 Generate a complete HTML page with the following structure and design specs. Styles and scripts should be external files referenced via relative paths from `index.html`:
 
 - **CSS files** go in `style/` directory (e.g., `style/main.css`, `style/components.css`)
-- **JS files** go in `scripts/` directory (e.g., `scripts/main.js`, `scripts/sidebar.js`)
+- **JS files** go in `scripts/` directory (e.g., `scripts/mermaid-init.js`, `scripts/main.js`, `scripts/sidebar.js`)
 - **i18n files** go in `i18n/` directory (e.g., `i18n/zh.js`, `i18n/en.js`, `i18n/ru.js`) — one file per language
 - **Mermaid.js** is loaded via CDN in the HTML `<head>` (no local copy needed)
 - **Company logo images** are referenced from `media/` (single-lang) or `media/{lang}/` (multi-lang)
@@ -265,10 +273,10 @@ All external files are referenced from `index.html` using relative paths (e.g., 
 #### Page Structure
 
 - **Header** — fixed top bar with menu toggle icon (☰) on the far left, followed by company logo, page title, and version string. The menu icon toggles the sidebar fold/unfold. When multi-language is active (`LANGS` has >1 item), a **language switcher widget** sits in the **top-right corner** of the header (to the right of the version string).
-- **Sidebar** — fixed left navigation with TOC. Defaults to visible (280px width). Can be folded/unfolded via the menu icon in the header. When folded, the content area expands to fill the available space.
+- **Sidebar** — fixed left navigation with TOC. Defaults to visible (280px width). Can be folded/unfolded via the menu icon in the header. When folded, the content area expands to fill the available space. **Multi-language:** the sidebar TOC list items are wrapped in `.lang-content` blocks (one per language) so `switchLanguage()` automatically switches the visible TOC text.
 - **Content** — main body area with max-width 900px, centered. Content area has `margin-left: 280px` when sidebar is visible; expands to full width when sidebar is folded.
 - **Footer** — company logo and copyright
-- **Back-to-top button** — fixed bottom-right, appears on scroll
+- **Back-to-top button** — fixed bottom-right, appears on scroll. **Pure icon button** (↑ or ▲) with no visible text — does NOT use `data-i18n`.
 
 #### Template Placeholders
 
@@ -277,7 +285,7 @@ All external files are referenced from `index.html` using relative paths (e.g., 
 | `{{TITLE}}` | First `#` heading or filename |
 | `{{VERSION}}` | Version string if found (e.g., "V2.3.0"), otherwise empty |
 | `{{CONTENT}}` | Converted HTML body from Step 3 |
-| `{{TOC}}` | Generated sidebar TOC from headings |
+| `{{TOC}}` | Generated sidebar TOC. **Single-language:** plain TOC `<ul>`. **Multi-language:** per-language TOC `<ul>` lists each wrapped in `<div class="lang-content" data-lang-content="XX">` — heading text translated per language, anchor IDs identical across all blocks |
 | `{{DEFAULT_LANG}}` | First language code from `LANGS` (e.g., `zh`) — used in JS i18n init |
 | `{{LANGS_LIST}}` | Full `LANGS` string (e.g., `zh,en,ru`) — used to generate language switcher buttons |
 | `{{I18N_SCRIPTS}}` | `<script>` tags loading each language's i18n file from `i18n/` directory (e.g., `<script src="i18n/zh.js"></script><script src="i18n/en.js"></script>`). Empty string if single-language. |
@@ -356,6 +364,45 @@ Build the sidebar TOC from parsed headings:
 - Generate anchor IDs: lowercase English words with hyphen separators, with heading levels chained by hyphens. ALL heading text must be translated to English first, regardless of content language (Chinese → English, Russian → English, Japanese → English, etc.). Never use pinyin or transliteration (e.g., "系统设置 > 导出路径" → `system-settings-export-path`). See Heading ID slugs in Step 3 for full rules.
 - Each TOC item is an `<li>` containing an `<a>` linking to the heading's `id`
 
+**Multi-language TOC (CRITICAL):** When `LANGS` has multiple languages, the sidebar TOC must be translated just like body content:
+
+- Generate a **separate TOC list** for each language in `LANGS`
+- Each language's TOC uses the **same anchor IDs** (always English) but **translated heading text** for the visible link text
+- Wrap each language's TOC `<ul>` in a `<div class="lang-content" data-lang-content="XX">` block — exactly the same pattern as body content
+- The default language's TOC block is visible; all others have `style="display:none"`
+- `switchLanguage()` already handles all `.lang-content` blocks — no additional JS needed for TOC switching
+
+**Example sidebar structure (multi-language):**
+
+```html
+<aside id="sidebar">
+  <h2 data-i18n="toc-title">目录</h2>
+  <!-- Chinese TOC (default, visible) -->
+  <div class="lang-content" data-lang-content="zh">
+    <ul class="toc-list">
+      <li class="toc-h2"><a href="#system-settings">系统设置</a></li>
+      <li class="toc-h3"><a href="#system-settings-export-path">导出路径</a></li>
+    </ul>
+  </div>
+  <!-- English TOC (hidden initially) -->
+  <div class="lang-content" data-lang-content="en" style="display:none">
+    <ul class="toc-list">
+      <li class="toc-h2"><a href="#system-settings">System Settings</a></li>
+      <li class="toc-h3"><a href="#system-settings-export-path">Export Path</a></li>
+    </ul>
+  </div>
+  <!-- Russian TOC (hidden initially) -->
+  <div class="lang-content" data-lang-content="ru" style="display:none">
+    <ul class="toc-list">
+      <li class="toc-h2"><a href="#system-settings">Настройки системы</a></li>
+      <li class="toc-h3"><a href="#system-settings-export-path">Путь экспорта</a></li>
+    </ul>
+  </div>
+</aside>
+```
+
+**Single-language pages** output a plain TOC `<ul>` without `.lang-content` wrappers.
+
 ## Callout Conversion
 
 Convert markdown blockquotes with specific markers to styled callouts:
@@ -390,12 +437,59 @@ graph TD
    ```html
    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
    ```
-4. Initialize Mermaid at the end of the `<body>`, after all content:
+4. Initialize Mermaid at the end of the `<body>`, after all content. The approach depends on whether the page is single-language or multi-language:
+
+   **Single-language** (no `.lang-content` blocks — all diagrams visible on load):
    ```html
    <script>
    mermaid.initialize({ startOnLoad: true, theme: 'default' });
    </script>
    ```
+
+   **Multi-language** (`.lang-content` blocks with `display:none` — CRITICAL):
+
+   Mermaid.js **cannot render inside `display:none` containers** — it needs actual layout dimensions to compute SVG sizes. Hidden elements report 0×0, causing Mermaid to produce empty SVGs or fail silently. The fix: temporarily unhide ALL `.lang-content` blocks, let Mermaid render everything at correct dimensions, then restore visibility:
+
+   ```html
+   <script src="scripts/mermaid-init.js"></script>
+   ```
+
+   **`scripts/mermaid-init.js`:**
+   ```javascript
+   mermaid.initialize({ startOnLoad: false, theme: 'default' });
+
+   async function initMermaid() {
+     const blocks = document.querySelectorAll('.lang-content');
+     if (blocks.length === 0) {
+       // Single-language: just render directly
+       await mermaid.run();
+       return;
+     }
+
+     // Temporarily show ALL language blocks so Mermaid can measure dimensions
+     const hiddenBlocks = [];
+     blocks.forEach(el => {
+       if (el.style.display === 'none') {
+         hiddenBlocks.push(el);
+         el.style.display = '';
+       }
+     });
+
+     // Force layout recalculation before Mermaid reads dimensions
+     document.body.offsetHeight;
+
+     // Render ALL Mermaid diagrams at correct dimensions
+     await mermaid.run();
+
+     // Restore original visibility
+     hiddenBlocks.forEach(el => {
+       el.style.display = 'none';
+     });
+   }
+
+   // Called from scripts/main.js DOMContentLoaded after language init
+   ```
+   Load `scripts/mermaid-init.js` BEFORE `scripts/main.js` so `initMermaid()` is available when the DOMContentLoaded handler calls it.
 
 ### Styling
 
@@ -499,13 +593,12 @@ All localizable UI chrome text must use `data-i18n` attributes. Each translatabl
 
 ```html
 <span data-i18n="toc-title">目录</span>
-<button data-i18n="back-to-top">返回顶部</button>
 <p data-i18n="footer-copyright">© 2026 研知教育科技 版权所有</p>
 ```
 
 The initial text content (before any JS runs) must be in the **default language** (first in `LANGS`). The i18n system replaces it on language switch.
 
-**Note:** The sidebar toggle button is a pure icon (☰) with no visible text — it does NOT use `data-i18n` and has no translatable text. It may have an `aria-label` attribute for screen readers but no visible label.
+**Note:** The sidebar toggle button (☰) and back-to-top button (↑) are pure icons with no visible text — they do NOT use `data-i18n` and have no translatable text. They may have `aria-label` attributes for screen readers but no visible labels.
 
 ### Translation Files (External i18n JS)
 
@@ -515,7 +608,6 @@ Translation text for UI chrome (data-i18n elements) is stored in **separate Java
 ```javascript
 I18N['zh'] = {
   'toc-title': '目录',
-  'back-to-top': '返回顶部',
   'footer-copyright': '© 2026 研知教育科技 版权所有',
   'lang-switcher-label': '语言'
 };
@@ -525,7 +617,6 @@ I18N['zh'] = {
 ```javascript
 I18N['en'] = {
   'toc-title': 'Contents',
-  'back-to-top': 'Back to Top',
   'footer-copyright': '© 2026 WisQuest EdTech. All rights reserved.',
   'lang-switcher-label': 'Language'
 };
@@ -535,7 +626,6 @@ I18N['en'] = {
 ```javascript
 I18N['ru'] = {
   'toc-title': 'Содержание',
-  'back-to-top': 'Наверх',
   'footer-copyright': '© 2026 WisQuest EdTech. Все права защищены.',
   'lang-switcher-label': 'Язык'
 };
@@ -546,7 +636,7 @@ I18N['ru'] = {
 - Keys are identical across all language files (same set of `data-i18n` keys)
 - The global `I18N` object is initialized in `scripts/main.js` before any i18n files are loaded: `const I18N = {};`
 - i18n files are loaded AFTER `scripts/main.js` and BEFORE the `DOMContentLoaded` handler fires
-- No `fold-sidebar` / `expand-sidebar` keys — the sidebar toggle is a pure icon with no text
+- No `fold-sidebar` / `expand-sidebar` / `back-to-top` keys — sidebar toggle and back-to-top buttons are pure icons with no text
 - The `index.html` `<head>` loads i18n files as: `<script src="i18n/zh.js"></script>` etc.
 
 ### Language Switching Implementation
@@ -629,6 +719,36 @@ function initSidebarToggle() {
   });
 }
 
+// Back-to-top button (icon-only: ↑, no text)
+function initBackToTop() {
+  const btn = document.getElementById('back-to-top');
+  if (!btn) return;
+
+  window.addEventListener('scroll', () => {
+    btn.style.display = window.scrollY > 400 ? '' : 'none';
+  });
+
+  btn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
+// TOC link click handling (smooth scroll with header offset)
+function initTocLinks() {
+  document.querySelectorAll('.toc-list a[href^="#"]').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const target = document.querySelector(link.getAttribute('href'));
+      if (target) {
+        const headerHeight = 64;
+        const padding = 16;
+        const position = target.getBoundingClientRect().top + window.pageYOffset - headerHeight - padding;
+        window.scrollTo({ top: position, behavior: 'smooth' });
+      }
+    });
+  });
+}
+
 // On page load: determine language with priority: URL param > localStorage > default
 // Also handle combined #anchor + ?lang= scenario (apply language first, then scroll)
 document.addEventListener('DOMContentLoaded', () => {
@@ -645,24 +765,45 @@ document.addEventListener('DOMContentLoaded', () => {
   initBackToTop();
   initTocLinks();
 
-  // Handle anchor scroll AFTER language is applied (for combined ?lang=X#anchor URLs)
-  if (window.location.hash) {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const target = document.querySelector(window.location.hash);
-        if (target) {
-          const headerHeight = 64;
-          const padding = 16;
-          const position = target.getBoundingClientRect().top + window.pageYOffset - headerHeight - padding;
-          window.scrollTo({ top: position, behavior: 'smooth' });
-        }
-      });
+  // Render Mermaid AFTER language blocks are visible (Mermaid needs real layout dimensions)
+  // initMermaid() temporarily unhides all .lang-content blocks, renders diagrams, then restores
+  if (typeof initMermaid === 'function') {
+    initMermaid().then(() => {
+      // Handle anchor scroll AFTER Mermaid renders (diagrams may change page height)
+      if (window.location.hash) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const target = document.querySelector(window.location.hash);
+            if (target) {
+              const headerHeight = 64;
+              const padding = 16;
+              const position = target.getBoundingClientRect().top + window.pageYOffset - headerHeight - padding;
+              window.scrollTo({ top: position, behavior: 'smooth' });
+            }
+          });
+        });
+      }
     });
+  } else {
+    // Single-language (no initMermaid function): Mermaid was initialized with startOnLoad
+    if (window.location.hash) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const target = document.querySelector(window.location.hash);
+          if (target) {
+            const headerHeight = 64;
+            const padding = 16;
+            const position = target.getBoundingClientRect().top + window.pageYOffset - headerHeight - padding;
+            window.scrollTo({ top: position, behavior: 'smooth' });
+          }
+        });
+      });
+    }
   }
 });
 ```
 
-**Note:** The sidebar toggle button is a pure icon (☰) — it has no text and does not interact with the i18n system. The `initSidebarToggle()`, `initBackToTop()`, and `initTocLinks()` functions are placed in `scripts/main.js` alongside the language switching logic.
+**Note:** The sidebar toggle button (☰) and back-to-top button (↑) are pure icons — they have no text and do not interact with the i18n system. Mermaid initialization is in a separate `scripts/mermaid-init.js` file loaded before `scripts/main.js`. All other functions are placed in `scripts/main.js`.
 
 Replace `{{DEFAULT_LANG}}` with the first language code from `LANGS` during HTML generation.
 
@@ -687,10 +828,11 @@ Images inside `.lang-content` blocks do NOT need `data-src-{lang}` — they alre
 |---------|-------|-----------|
 | Header title | ✅ Yes | `data-i18n` |
 | TOC heading ("目录") | ✅ Yes | `data-i18n` |
-| Back-to-top button | ✅ Yes | `data-i18n` |
+| Back-to-top button | ❌ No | Pure icon (↑), no text — does NOT use `data-i18n` |
 | Footer copyright | ✅ Yes | `data-i18n` |
 | Language switcher labels | ✅ Yes | `data-i18n` |
 | Sidebar toggle button | ❌ No | Pure icon (☰), no text — does NOT use `data-i18n` |
+| Sidebar TOC items (link text) | ✅ Yes | `.lang-content` blocks inside sidebar — one TOC list per language, wrapped in `<div class="lang-content">` |
 | Body content (headings, paragraphs, tables, captions) | ✅ Yes | `.lang-content` blocks — translated in Step 3 |
 | Screenshot captions | ✅ Yes | Translated inside `.lang-content` blocks |
 | Table headers | ✅ Yes | Translated inside `.lang-content` blocks |
@@ -735,12 +877,13 @@ When `LANGS` has multiple languages, the HTML body content must contain **ALL la
 **Key rules for `.lang-content` blocks:**
 
 1. **Each language gets its own content block** — ALL body content (headings, paragraphs, tables, callouts, figures, images) is duplicated for each target language, wrapped in `<div class="lang-content" data-lang-content="XX">`.
-2. **Default language block is visible** — all other language blocks have `style="display:none"`.
-3. **Heading `id` attributes are identical across language blocks** — since only one block is visible at a time, duplicate IDs don't cause conflicts. Anchor links always resolve to the visible heading.
-4. **Images use language-specific paths** — each block's `<img src>` points to `media/{lang}/filename`. No JS image src swapping needed — showing/hiding the container handles it.
-5. **Mermaid diagrams are duplicated per language** — each `.lang-content` block has its own `<pre class="mermaid">` with translated node labels if the diagram contains text.
-6. **Sidebar TOC links point to the correct heading IDs** — since IDs are identical across language blocks, TOC links work for all languages.
-7. **All HTML structure rules from Step 3 apply per language** — headings, callouts, tables, figures, captions are all regenerated for each translated version.
+2. **Sidebar TOC uses `.lang-content` too** — the sidebar contains per-language TOC lists wrapped in `.lang-content` blocks, same pattern as body content. `switchLanguage()` toggles sidebar TOC and body content together.
+3. **Default language block is visible** — all other language blocks have `style="display:none"`.
+4. **Heading `id` attributes are identical across language blocks** — since only one block is visible at a time, duplicate IDs don't cause conflicts. Anchor links always resolve to the visible heading.
+5. **Images use language-specific paths** — each block's `<img src>` points to `media/{lang}/filename`. No JS image src swapping needed — showing/hiding the container handles it.
+6. **Mermaid diagrams are duplicated per language** — each `.lang-content` block has its own `<pre class="mermaid">` with translated node labels if the diagram contains text. **Mermaid.js cannot render inside `display:none` containers** — see [Mermaid & Flowchart Handling](#mermaid--flowchart-handling) for the `initMermaid()` fix that temporarily unhides all blocks before rendering.
+7. **Sidebar TOC links point to the correct heading IDs** — since IDs are identical across language blocks, TOC links work for all languages.
+8. **All HTML structure rules from Step 3 apply per language** — headings, callouts, tables, figures, captions are all regenerated for each translated version.
 
 ### Company Name Rules
 
@@ -773,7 +916,8 @@ When `LANGS` has multiple languages, the HTML body content must contain **ALL la
 ├── style/
 │   └── main.css        # All page styles
 ├── scripts/
-│   └── main.js         # Page logic (sidebar, back-to-top, TOC links, anchor scroll)
+│   ├── mermaid-init.js  # Mermaid.js init (single-lang: startOnLoad=true)
+│   └── main.js          # Page logic (sidebar, back-to-top, TOC links, anchor scroll)
 └── media/              # Flat media directory
     ├── 1-login.png
     ├── 2-settings.png
@@ -790,7 +934,8 @@ When `LANGS` has multiple languages, the HTML body content must contain **ALL la
 ├── style/
 │   └── main.css        # All page styles
 ├── scripts/
-│   └── main.js         # Page logic (sidebar, back-to-top, TOC links, language switching)
+│   ├── mermaid-init.js  # Mermaid.js init with initMermaid() (unhides blocks before render)
+│   └── main.js          # Page logic (sidebar, back-to-top, TOC links, language switching)
 ├── i18n/
 │   ├── zh.js           # Chinese UI chrome translations
 │   ├── en.js           # English UI chrome translations
@@ -885,6 +1030,10 @@ When `LANGS` has multiple languages, the HTML body content must contain **ALL la
 | Images in header/footer don't switch on language change | Images outside `.lang-content` blocks (logos) need `data-src-{lang}` attributes. The `switchLanguage()` function swaps `src` based on these |
 | Image `src` not updated in `switchLanguage()` for UI chrome | Step 3 of `switchLanguage()` handles `img[data-src-zh]` — ensure logo images have these data attributes |
 | Mermaid diagrams not duplicated per language | Each `.lang-content` block needs its own `<pre class="mermaid">` if diagram labels contain human-readable text. Translate node labels per language |
+| Mermaid diagrams empty/blank in non-default languages | Mermaid.js cannot render in `display:none` containers (0×0 dimensions). For multi-language, use `startOnLoad: false` + `initMermaid()` that temporarily unhides ALL `.lang-content` blocks before calling `mermaid.run()`, then restores visibility |
+| `mermaid.initialize({ startOnLoad: true })` used for multi-language page | Multi-language pages MUST use `startOnLoad: false` and manually render via `initMermaid()`. `startOnLoad: true` only for single-language pages |
+| `scripts/mermaid-init.js` not created for multi-language page | Create `scripts/mermaid-init.js` with `mermaid.initialize()` and `initMermaid()` function. Load it BEFORE `scripts/main.js` |
+| `initMermaid()` not called in DOMContentLoaded | Call `initMermaid()` after `switchLanguage()` in the DOMContentLoaded handler. Anchor scrolling must wait for Mermaid to finish (diagrams change page height) |
 | Single-language page has `.lang-content` wrappers | Only multi-language pages use `.lang-content` blocks. Single-language pages output plain HTML body content directly |
 | Content visibility not toggled on language switch | Step 2 of `switchLanguage()` must show/hide `.lang-content` blocks based on `data-lang-content` matching the target language |
 | I18N inline object instead of external i18n files | Multi-language pages MUST use external i18n files (`i18n/{lang}.js`), not an inline `I18N` object. Each language gets its own file |
@@ -894,3 +1043,9 @@ When `LANGS` has multiple languages, the HTML body content must contain **ALL la
 | CSS inlined in `<style>` instead of external file | CSS should be in `style/main.css` (or multiple files in `style/`), referenced via `<link rel="stylesheet">` in `index.html` |
 | JS inlined in `<script>` instead of external file | JS should be in `scripts/main.js`, referenced via `<script src="scripts/main.js">` in `index.html` |
 | Sidebar toggle has `data-i18n` or translatable text | The toggle is a pure icon (☰) — no `data-i18n`, no text content, no fold/expand labels in i18n files |
+| Back-to-top button has text instead of icon | The back-to-top button is a pure icon (↑ or ▲) — no visible text, no `data-i18n`, no `back-to-top` key in i18n files |
+| `back-to-top` key exists in i18n files | Remove `back-to-top` from all i18n files — the button is a pure icon with no translatable text |
+| Sidebar TOC items hardcoded in default language (not in `.lang-content`) | Multi-language pages MUST wrap per-language sidebar TOC lists in `.lang-content` blocks (one per language). `switchLanguage()` Step 2 handles them automatically |
+| Sidebar TOC text doesn't change on language switch | Ensure sidebar contains per-language `<div class="lang-content" data-lang-content="XX">` wrappers around each language's TOC `<ul>`. Non-default language TOC blocks must have `style="display:none"` |
+| Missing `initBackToTop()` function | Define `initBackToTop()` in `scripts/main.js` — it handles scroll-based visibility and click-to-scroll behavior for the icon button |
+| Missing `initTocLinks()` function | Define `initTocLinks()` in `scripts/main.js` — it intercepts sidebar TOC link clicks for smooth scroll with header offset |
